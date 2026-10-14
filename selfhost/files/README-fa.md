@@ -66,6 +66,7 @@ sudo systemctl daemon-reload && sudo systemctl restart hamsohbat coturn
 | `PORT` / `HOST` | پورت و آدرسی که سرور گوش می‌دهد (پیش‌فرض 3000) |
 | `DATA_DIR` | محل پایگاه‌داده و فایل‌ها (`hamsohbat.db`) — از همین فایل نسخه‌ی پشتیبان بگیرید |
 | `REGISTRATION_CODE` | اگر مقدار داشته باشد، ثبت‌نام فقط با این کد ممکن است |
+| `TRUST_PROXY` | اگر برنامه پشت پروکسی‌ای غیر از Caddy روی همین سرور است، `1` بگذارید تا IP واقعی کاربران (از `X-Forwarded-For`) برای محدودیت تلاش ورود و فهرست دستگاه‌ها استفاده شود |
 | `ICE_SERVERS` | فهرست JSON سرورهای STUN/TURN |
 
 ## پشتیبان‌گیری

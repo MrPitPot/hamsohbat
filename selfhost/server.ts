@@ -1,5 +1,5 @@
 // Self-hosted server: runs the exact same Hub as Cloudflare, on Node 22.5+ with a local SQLite file.
-// Usage: node server.mjs   (env: PORT, HOST, DATA_DIR, REGISTRATION_CODE, ICE_SERVERS, TURN_KEY_ID, TURN_KEY_API_TOKEN)
+// Usage: node server.mjs   (env: PORT, HOST, DATA_DIR, REGISTRATION_CODE, ICE_SERVERS, TURN_KEY_ID, TURN_KEY_API_TOKEN, TRUST_PROXY)
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -13,6 +13,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
 const DATA_DIR = path.resolve(process.env.DATA_DIR || path.join(here, 'data'));
+const TRUST_PROXY = /^(1|true|yes)$/i.test(process.env.TRUST_PROXY || '');
 const STATIC_DIR = path.resolve(process.env.STATIC_DIR || path.join(here, 'public'));
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -102,6 +103,12 @@ const server = http.createServer(async (req, res) => {
     if (!url.pathname.startsWith('/api/')) return serveStatic(url.pathname, res);
     const headers = new Headers();
     for (const [k, v] of Object.entries(req.headers)) if (v !== undefined) headers.set(k, Array.isArray(v) ? v.join(', ') : v);
+    // The Hub reads the caller's address from this header (login rate limits, the devices list). A client-sent value is
+    // never used; X-Forwarded-For is only believed from a local reverse proxy (Caddy) or with TRUST_PROXY=1.
+    const peer = (req.socket.remoteAddress || '').replace(/^::ffff:/, '');
+    const viaProxy = TRUST_PROXY || peer === '127.0.0.1' || peer === '::1';
+    const forwarded = viaProxy ? String(req.headers['x-forwarded-for'] || '').split(',').pop()!.trim() : '';
+    headers.set('cf-connecting-ip', forwarded || peer);
     const hasBody = req.method !== 'GET' && req.method !== 'HEAD';
     const request = new Request(url, {
       method: req.method,

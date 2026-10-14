@@ -417,6 +417,39 @@ for (const bad of ['http://127.0.0.1:8787/', 'http://localhost/', 'http://192.16
 const emb = await a.api('GET', '/api/embed?url=' + encodeURIComponent('https://example.com/'));
 ok(emb.status === 200, 'link preview endpoint answers');
 console.log('  (example.com preview: ' + JSON.stringify(emb.data?.embed) + ')');
+
+section('devices and login limits');
+const other = new Client(a.name);
+other.token = (await other.api('POST', '/api/auth/login', { username: a.name, password: 'newsecret1', client: 'desktop' })).data.token;
+await other.connect();
+let sess = (await a.api('GET', '/api/users/me/sessions')).data.sessions;
+const mine = sess.find((s) => s.current);
+const theirs = sess.find((s) => !s.current && s.client === 'desktop');
+ok(sess.length >= 2 && mine && theirs, 'devices list shows this and the other device');
+ok(theirs?.online === true && typeof theirs.lastUsed === 'number' && theirs.expiresAt > Date.now() + 29 * 86400000, 'devices list shows online state and expiry');
+ok(!JSON.stringify(sess).includes(other.token), 'devices list never shows tokens');
+ok((await a.api('DELETE', '/api/users/me/sessions/' + mine.id)).status === 400, 'the current device signs out with Log Out instead');
+ok((await b.api('DELETE', '/api/users/me/sessions/' + theirs.id)).status === 404, 'nobody else can sign out your devices');
+const closed = new Promise((r) => other.ws.addEventListener('close', (e) => r(e.code)));
+ok((await a.api('DELETE', '/api/users/me/sessions/' + theirs.id)).status === 200, 'sign out another device');
+ok(!!(await other.wait('SIGNED_OUT')), 'the signed-out device is told at once');
+// The local runtime finishes the close handshake slowly, so this waits a while.
+ok((await Promise.race([closed, sleep(15000)])) === 4001, "the signed-out device's connection closes");
+ok((await other.api('GET', '/api/ice')).status === 401, 'its token stops working');
+const third = new Client(a.name);
+third.token = (await third.api('POST', '/api/auth/login', { username: a.name, password: 'newsecret1' })).data.token;
+ok((await a.api('DELETE', '/api/users/me/sessions')).data.count >= 1, 'sign out all other devices');
+ok((await third.api('GET', '/api/ice')).status === 401 && (await a.api('GET', '/api/ice')).status === 200, 'only this device stays signed in');
+sess = (await a.api('GET', '/api/users/me/sessions')).data.sessions;
+ok(sess.length === 1 && sess[0].current, 'one device left');
+const victim = new Client('locked_' + run);
+await victim.register();
+for (let i = 0; i < 10; i++) await new Client('x').api('POST', '/api/auth/login', { username: victim.name, password: 'guess' + i });
+const locked = await new Client('x').api('POST', '/api/auth/login', { username: victim.name, password: 'secret123' });
+ok(locked.status === 429 && locked.data.wait > 0, 'too many wrong passwords lock the account for a while');
+ok((await victim.api('GET', '/api/ice')).status === 200, 'devices already signed in keep working');
+ok((await new Client('x').api('POST', '/api/auth/login', { username: c.name, password: 'secret123' })).status === 200, 'other accounts can still log in');
+
 await a.api('POST', '/api/auth/logout');
 ok((await a.api('GET', '/api/ice')).status === 401, 'logout invalidates the token');
 a.clear();

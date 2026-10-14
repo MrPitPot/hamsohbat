@@ -15,7 +15,7 @@ import { NOISE_MODES } from './noise';
 import { ForwardModal, PollModal } from './features/Messages';
 import { CreateChannelModal, ChannelSettings, CreateThreadModal, ThreadsModal, RenameThread, WebhooksTab } from './features/Channels';
 import { ExpressionsTab, AutoModTab, AuditLogTab, EventsModal, CreateEventModal, NotificationSettingsModal, TimeoutModal, MoveModal, DiscordImportModal } from './features/Server';
-import { AccountExtras, MicTest, StreamQuality, KeybindsTab, ActivityTab, ActivityLine, NoteField, InboxModal, QuickSwitcher } from './features/Account';
+import { AccountExtras, DevicesTab, MicTest, StreamQuality, KeybindsTab, ActivityTab, ActivityLine, NoteField, InboxModal, QuickSwitcher } from './features/Account';
 import { Clock, MicOff, HeadphoneOff, ArrowRightLeft, Hash as HashIcon, Download } from 'lucide-react';
 
 export const STATUS_LABEL: Record<string, string> = { online: 'Online', idle: 'Idle', dnd: 'Do Not Disturb', invisible: 'Invisible', offline: 'Offline' };
@@ -1017,6 +1017,7 @@ function UserSettings({ tab: initialTab }: { tab?: string }) {
   const tabs = [
     ['account', 'My Account'],
     ['profile', 'Profile'],
+    ['devices', 'Devices'],
     ['voice', 'Voice & Video'],
     ['notifications', 'Notifications'],
     ['keybinds', 'Keybinds'],
@@ -1111,6 +1112,7 @@ function UserSettings({ tab: initialTab }: { tab?: string }) {
             </button>
           </>
         )}
+        {tab === 'devices' && <DevicesTab />}
         {tab === 'voice' && <Devices />}
         {tab === 'keybinds' && <KeybindsTab />}
         {tab === 'activity' && <ActivityTab />}

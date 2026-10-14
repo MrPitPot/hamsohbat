@@ -1,12 +1,16 @@
 // Small helpers shared by the Hub and its feature modules.
 
 export class HttpError extends Error {
-  constructor(public status: number, msg: string) {
+  constructor(public status: number, msg: string, public extra?: Record<string, any>) {
     super(msg);
   }
 }
 export const fail = (msg: string, status = 400): never => {
   throw new HttpError(status, msg);
+};
+/** Rejects a request that hit a brute-force limit; `wait` is in minutes and fills the message's {n}. */
+export const tooMany = (wait: number): never => {
+  throw new HttpError(429, 'Too many attempts. Try again in {n} minutes.', { wait });
 };
 export const json = (data: any, status = 200) =>
   new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } });
