@@ -213,7 +213,7 @@ try {
   await A.evaluate(() => window.__ptt(false));
   await A.evaluate(() => {
     const s = JSON.parse(localStorage.getItem('settings'));
-    localStorage.setItem('settings', JSON.stringify({ ...s, voiceMode: 'vad', vadThreshold: 0 }));
+    localStorage.setItem('settings', JSON.stringify({ ...s, voiceMode: 'vad', vadThreshold: 0, vadAuto: false }));
   });
   await A.reload();
   await A.waitForSelector('.user-panel');

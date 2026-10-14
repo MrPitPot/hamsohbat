@@ -46,6 +46,13 @@ class Voice {
   pttDown = false;
   lastTx: boolean | null = null;
   level = -100; // current microphone level in dB, shown in the settings
+  floor = -60; // estimated noise floor in dB (automatic sensitivity)
+  /** The level above which the microphone opens. */
+  threshold() {
+    const st = get().settings;
+    return st.vadAuto ? Math.max(-70, Math.min(-25, this.floor + 10)) : st.vadThreshold;
+  }
+  warnedRelay = false;
   mic: ProcessedMic | null = null; // the microphone after noise cancellation
   bitrate = 64; // kbps, from the channel settings
   forced = { serverMute: false, serverDeaf: false, suppress: false }; // set by moderators / stage
@@ -203,7 +210,7 @@ class Voice {
     if (this.effectiveMute()) return false;
     const st = get().settings;
     if (st.voiceMode === 'ptt') return this.pttDown;
-    return st.vadThreshold <= -100 || Date.now() < this.gateUntil;
+    return (!st.vadAuto && st.vadThreshold <= -100) || Date.now() < this.gateUntil;
   }
   private applyMute() {
     const tx = this.transmitting();
@@ -268,6 +275,7 @@ class Voice {
     this.applyMute();
     const v = get().voice;
     wsSend({ op: 'voice_join', channelId, mute: this.effectiveMute(), deaf: v.deaf });
+    setTimeout(() => wsSend({ op: 'music', cmd: 'get' }), 800);
     this.meterSelf();
     this.startMeters();
   }
@@ -367,6 +375,13 @@ class Voice {
         this.tuneScreenSenders(p);
       }
     };
+    // Still not connected after a while: most likely a strict NAT that needs a relay (TURN) server.
+    setTimeout(() => {
+      if (this.peers.get(sid) === p && !['connected', 'completed'].includes(pc.iceConnectionState) && !this.warnedRelay) {
+        this.warnedRelay = true;
+        toast('Could not connect directly to this person. The server may need a TURN relay (see README).');
+      }
+    }, 20000);
     const mic = this.userStream?.getAudioTracks()[0];
     // Without a microphone we still need an audio m-line so that negotiation starts and we can listen.
     if (mic) p.audioSender = pc.addTrack(mic, this.userStream!);
@@ -657,7 +672,10 @@ class Voice {
         if (isMe) {
           const db = rms > 0 ? 20 * Math.log10(rms) : -100;
           this.level = db;
-          const thr = s.settings.vadThreshold;
+          // The floor drops quickly to quiet moments and creeps up slowly, so speech never raises it.
+          this.floor += (db - this.floor) * (db < this.floor ? 0.2 : 0.002);
+          this.floor = Math.max(-100, Math.min(-20, this.floor));
+          const thr = this.threshold();
           if (db > thr) this.gateUntil = now + 400; // keep the gate open briefly between words
           if (db > Math.max(thr, -45)) m.until = now + 350;
           if (this.transmitting() !== this.lastTx) this.applyMute();

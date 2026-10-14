@@ -360,6 +360,27 @@ try {
   ok(await until(B, () => Object.values(window.__store.getState().notes).includes('met at the lan party')), 'private notes about users save');
   await B.keyboard.press('Escape');
 
+  console.log('• music in a voice channel');
+  const voiceId = await A.evaluate((sid) => window.__store.getState().servers[sid].channels.find((c) => c.type === 2).id, serverId);
+  await A.locator('.sidebar .channel .lucide-volume-2').first().click();
+  await B.evaluate((id) => window.__voice.join(id), voiceId);
+  await until(A, () => !!document.querySelector('.voice-controls button[title="Music"]'));
+  await A.locator('.voice-controls button[title="Music"]').click();
+  await A.fill('.music-panel input', 'https://example.com/song-one.mp3');
+  await A.click('.music-panel .btn.primary');
+  ok(await until(A, () => document.querySelectorAll('.music-item').length === 1), 'a link is added to the shared queue');
+  ok(await until(B, (id) => window.__store.getState().music[id]?.queue?.length === 1 && window.__store.getState().music[id].playing, voiceId), 'the other person gets the same queue, playing');
+  await A.fill('.music-panel input', 'https://example.com/song-two.mp3');
+  await A.click('.music-panel .btn.primary');
+  await A.locator('.music-controls button[title="Skip"]').click();
+  ok(await until(B, (id) => window.__store.getState().music[id]?.index === 1, voiceId), 'skip moves everybody to the next song');
+  await A.locator('.music-controls button[title="Pause"]').click();
+  ok(await until(B, (id) => window.__store.getState().music[id]?.playing === false, voiceId), 'pause reaches the other person');
+  await A.keyboard.press('Escape');
+  ok(await A.evaluate(() => window.__voice.threshold() < 0 && window.__store.getState().settings.vadAuto !== false), 'automatic input sensitivity is on by default');
+  await A.evaluate(() => window.__voice.leave());
+  await B.evaluate(() => window.__voice.leave());
+
   console.log('• Persian interface');
   const C = await open(tb, 'fa');
   await C.waitForSelector('.channel');

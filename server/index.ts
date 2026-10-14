@@ -1950,7 +1950,17 @@ export class Hub extends DurableObject<Env> {
           return { iceServers: JSON.parse(this.env.ICE_SERVERS) };
         } catch {}
       }
-      const fallback = { iceServers: [{ urls: ['stun:stun.cloudflare.com:3478', 'stun:stun.l.google.com:19302'] }] };
+      // Without a TURN key of our own, use the public Open Relay servers so calls still connect behind strict NATs.
+      const fallback = {
+        iceServers: [
+          { urls: ['stun:stun.cloudflare.com:3478', 'stun:stun.l.google.com:19302'] },
+          {
+            urls: ['turn:openrelay.metered.ca:80', 'turn:openrelay.metered.ca:443', 'turn:openrelay.metered.ca:443?transport=tcp', 'turns:openrelay.metered.ca:443?transport=tcp'],
+            username: 'openrelayproject',
+            credential: 'openrelayproject',
+          },
+        ],
+      };
       if (!this.env.TURN_KEY_ID || !this.env.TURN_KEY_API_TOKEN) return fallback;
       try {
         const r = await fetch(

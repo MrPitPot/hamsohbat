@@ -131,3 +131,6 @@ npm run release                  # نیاز به Visual Studio Build Tools، Rus
 ```
 
 پروژه با مجوز MIT منتشر شده است (فایل `LICENSE`). کتابخانه‌های شخص ثالث: tsclientlib (MIT/Apache-2.0)، nnnoiseless و RNNoise (BSD)، GTCRN و web-noise-suppressor (MIT)، WebView2 (مجوز مایکروسافت).
+
+### رله‌ی TURN (وقتی تماس وصل نمی‌شود)
+اگر دو نفر پشت اینترنت‌های سخت‌گیر هستند، تماس مستقیم برقرار نمی‌شود و فقط «در حال اتصال» می‌بینند. برنامه به‌طور پیش‌فرض یک رله‌ی عمومی (Open Relay) را امتحان می‌کند؛ برای پایداری بهتر یک کلید TURN رایگان در Cloudflare بسازید (Realtime ← TURN) و `TURN_KEY_ID` و `TURN_KEY_API_TOKEN` را مطابق بخش «تنظیمات اختیاری» تنظیم کنید.

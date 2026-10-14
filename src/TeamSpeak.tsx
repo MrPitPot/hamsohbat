@@ -77,7 +77,7 @@ const channelName = (id: number) => getTs().channels.find((c: TsChannel) => c.id
 /** Sends our voice-activation / push-to-talk / noise settings to the bridge. */
 function syncVoice(pttDown = false) {
   const st = get().settings;
-  ts({ cmd: 'voice', mode: st.voiceMode, threshold: st.vadThreshold, ptt: pttDown });
+  ts({ cmd: 'voice', mode: st.voiceMode, threshold: st.vadThreshold, ptt: pttDown, auto: !!st.vadAuto });
   ts({ cmd: 'noise', value: (st.noiseCancel || 'ai') !== 'off' });
 }
 
@@ -206,7 +206,7 @@ if (isDesktop) {
   (window as any).chrome.webview.addEventListener('message', (m: any) => m.data?.type === 'ts' && handle(m.data.event));
   window.addEventListener('hs-ptt', (e: any) => tsConnected() && get().settings.voiceMode === 'ptt' && syncVoice(e.detail));
   useStore.subscribe((st: any, prev: any) => {
-    if (tsConnected() && (st.settings.voiceMode !== prev.settings.voiceMode || st.settings.vadThreshold !== prev.settings.vadThreshold || st.settings.noiseCancel !== prev.settings.noiseCancel)) syncVoice();
+    if (tsConnected() && (st.settings.voiceMode !== prev.settings.voiceMode || st.settings.vadThreshold !== prev.settings.vadThreshold || st.settings.vadAuto !== prev.settings.vadAuto || st.settings.noiseCancel !== prev.settings.noiseCancel)) syncVoice();
   });
   (window as any).__tsConnected = tsConnected;
   (window as any).__tsTray = () => {
@@ -224,6 +224,7 @@ if (isDesktop) {
 }
 // For tests: feed bridge events without the desktop app.
 (window as any).__tsEvent = handle;
+(window as any).__tsAddChannel = (c: TsChannel) => setTs((s: any) => ({ channels: [...s.channels, c] }));
 
 // ---------------------------------------------------------------- actions
 export function tsConnect(b: Bookmark) {
@@ -512,10 +513,12 @@ function TsChannelNode({ c, depth }: { c: TsChannel; depth: number }) {
         <div
           className={'channel' + (mine?.channel === c.id ? ' active' : '') + (selected ? ' selected' : '') + (full ? ' full' : '')}
           style={{ paddingInlineStart: 8 + depth * 12 }}
-          onClick={() => setTs({ selected: { kind: 'channel', id: c.id } })}
-          onDoubleClick={() => joinChannel(c)}
+          onClick={() => {
+            setTs({ selected: { kind: 'channel', id: c.id } });
+            joinChannel(c);
+          }}
           onContextMenu={(e) => channelMenu(e, c)}
-          title={(c.topic || c.name) + '\n' + t('Double-click to join')}
+          title={c.topic || c.name}
         >
           <Volume2 size={18} />
           <span className="ch-name">{c.name}</span>
@@ -1133,9 +1136,13 @@ function TsDialogs() {
         <>
           {input('name', t('Channel Name'), { autoFocus: true, required: true, maxLength: 40, defaultValue: d.channel.name })}
           {input('topic', t('Topic'), { maxLength: 255, defaultValue: d.channel.topic || '' })}
+          <Field label={t('Voice Quality') + ' — ' + (v.quality ?? d.channel.codecQuality)}>
+            <input type="range" className="wide-range" min={1} max={10} value={v.quality ?? (d.channel.codecQuality || 6)} onChange={(e) => setV({ ...v, quality: Number(e.target.value) })} />
+            <small className="muted">{t('Higher quality sounds better but uses more bandwidth (10 is best).')}</small>
+          </Field>
         </>,
         t('Save'),
-        () => ts({ cmd: 'channelEdit', channel: d.channel.id, name: v.name ?? d.channel.name, topic: v.topic ?? d.channel.topic ?? '' })
+        () => ts({ cmd: 'channelEdit', channel: d.channel.id, name: v.name ?? d.channel.name, topic: v.topic ?? d.channel.topic ?? '', quality: v.quality ?? 0 })
       );
     case 'channelDelete':
       return form(t('Delete Channel'), <p>{t('Are you sure you want to delete {name}? This cannot be undone.', { name: d.channel.name })}</p>, t('Delete'), () => ts({ cmd: 'channelDelete', channel: d.channel.id, force: true }), true);

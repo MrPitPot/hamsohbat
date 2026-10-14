@@ -525,6 +525,10 @@ async fn main() {
 								if cmd.get("topic").is_some() {
 									e = e.set_topic(&topic);
 								}
+								let q = n(&cmd, "quality");
+								if q >= 1 && q <= 10 {
+									e = e.set_codec_quality(q as u8);
+								}
 								e.send_with_result(c)?;
 							}
 						}
@@ -584,6 +588,7 @@ async fn main() {
 							}
 						}
 						"voice" => {
+							shared.auto.store(b(&cmd, "auto"), Ordering::Relaxed);
 							shared.ptt_mode.store(s(&cmd, "mode") == "ptt", Ordering::Relaxed);
 							shared.ptt_down.store(b(&cmd, "ptt"), Ordering::Relaxed);
 							if let Some(t) = cmd.get("threshold").and_then(|x| x.as_f64()) {

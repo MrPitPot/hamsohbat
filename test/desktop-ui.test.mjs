@@ -220,6 +220,13 @@ try {
   ok(await until((n) => [...document.querySelectorAll('.ts-log-line')].some((l) => l.textContent.includes(n + ' connected')), otherName, 30000), 'log: another user connecting');
   await page.locator('.ts-user', { hasText: otherName }).click();
   ok(await until(() => /Version/.test(document.querySelector('.ts-info')?.textContent || '') && !/Version…/.test(document.querySelector('.ts-info').textContent)), 'clicking a user shows their info (version, groups, ping)');
+  // One click on a channel joins it (no double click needed).
+  await page.evaluate(() => (window.__native.length = 0));
+  // The fresh test server has a single channel, so add a second one to the tree.
+  await page.evaluate(() => window.__tsAddChannel?.({ id: 9999, parent: 0, order: 0, name: 'Extra Room', topic: '', maxClients: -1, hasPassword: false, isDefault: false, neededTalkPower: 0, type: 'permanent', codec: 'Opus', codecQuality: 6, description: '', silenced: false }));
+  const other_ch = page.locator('.sidebar .channel', { hasText: 'Extra Room' }).first();
+  await other_ch.click();
+  ok(await sent("m.type === 'ts' && m.payload.cmd === 'join'"), 'a single click on a channel joins it');
   await page.locator('.ts-tabs button', { hasText: 'Default Channel' }).first().click().catch(() => {});
   await page.locator('.ts-tabs button').nth(2).click();
   await page.fill('.ts-input', 'hello teamspeak');

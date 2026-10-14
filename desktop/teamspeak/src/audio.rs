@@ -23,6 +23,8 @@ pub type Handler = tsclientlib::audio::AudioHandler<ClientId>;
 pub struct Shared {
 	/// RNNoise noise suppression on the microphone.
 	pub noise: AtomicBool,
+	/// Automatic sensitivity: the gate follows the room's noise floor.
+	pub auto: AtomicBool,
 	pub muted: AtomicBool,
 	pub deaf: AtomicBool,
 	pub ptt_mode: AtomicBool,
@@ -32,6 +34,8 @@ pub struct Shared {
 	/// Last microphone level in dB (f32 bits).
 	pub level: AtomicU32,
 	pub transmitting: AtomicBool,
+	/// Estimated noise floor in dB (f32 bits).
+	pub floor: AtomicU32,
 	pub volumes: Mutex<HashMap<u16, f32>>,
 }
 
@@ -219,7 +223,14 @@ fn process(
 	let rms = (frame.iter().map(|x| x * x).sum::<f32>() / frame.len() as f32).sqrt();
 	let db = if rms > 0.0 { 20.0 * rms.log10() } else { -100.0 };
 	shared.level.store(db.to_bits(), Ordering::Relaxed);
-	let threshold = f32::from_bits(shared.threshold.load(Ordering::Relaxed));
+	let mut threshold = f32::from_bits(shared.threshold.load(Ordering::Relaxed));
+	if shared.auto.load(Ordering::Relaxed) {
+		// The floor falls quickly to quiet moments and creeps up slowly, so speech never raises it.
+		let floor = f32::from_bits(shared.floor.load(Ordering::Relaxed));
+		let floor = if db < floor { floor + (db - floor) * 0.2 } else { floor + (db - floor) * 0.002 };
+		shared.floor.store(floor.clamp(-100.0, -20.0).to_bits(), Ordering::Relaxed);
+		threshold = (floor + 10.0).clamp(-70.0, -25.0);
+	}
 	if db > threshold {
 		*open_until = 20; // keep sending 400 ms after the last loud frame
 	} else if *open_until > 0 {

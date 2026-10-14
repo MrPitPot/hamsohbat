@@ -9,9 +9,10 @@ import rnnoiseWorklet from '@sapphi-red/web-noise-suppressor/rnnoiseWorklet.js?u
 import rnnoiseWasm from '@sapphi-red/web-noise-suppressor/rnnoise.wasm?url';
 import rnnoiseSimdWasm from '@sapphi-red/web-noise-suppressor/rnnoise_simd.wasm?url';
 
-export type NoiseMode = 'ai' | 'rnnoise' | 'standard' | 'off';
+export type NoiseMode = 'ai' | 'ai+' | 'rnnoise' | 'standard' | 'off';
 export const NOISE_MODES: [NoiseMode, string, string][] = [
   ['ai', 'AI Noise Cancellation', 'A neural network removes keyboards, fans, traffic and other background noise. Best quality, a little more CPU.'],
+  ['ai+', 'AI Noise Cancellation (Extra Strong)', 'Two neural networks in a row, for very noisy places like open offices or a loud room. Uses more CPU.'],
   ['rnnoise', 'RNNoise', 'A lighter neural noise suppressor. Good for older computers.'],
   ['standard', 'Standard', "The browser's built-in noise suppression."],
   ['off', 'None', 'Send your microphone exactly as it is.'],
@@ -51,12 +52,13 @@ export interface ProcessedMic {
 /** Runs a microphone stream through the chosen noise canceller. Falls back to the raw stream on any error. */
 export async function processMic(raw: MediaStream, mode: NoiseMode): Promise<ProcessedMic> {
   const passthrough: ProcessedMic = { stream: raw, stop: () => raw.getTracks().forEach((t) => t.stop()), mode: mode === 'standard' ? 'standard' : 'off' };
-  if ((mode !== 'ai' && mode !== 'rnnoise') || !raw.getAudioTracks().length || typeof AudioWorkletNode === 'undefined') return passthrough;
+  if ((mode !== 'ai' && mode !== 'ai+' && mode !== 'rnnoise') || !raw.getAudioTracks().length || typeof AudioWorkletNode === 'undefined') return passthrough;
   // Modules were added to a context that has since been closed: start over.
   if (ctx?.state === 'closed') for (const k of Object.keys(modules)) delete modules[k];
   try {
     const ac = context();
-    const node = await makeNode(ac, mode);
+    const node = await makeNode(ac, mode === 'ai+' ? 'ai' : mode);
+    const second = mode === 'ai+' ? await makeNode(ac, 'rnnoise') : null;
     const src = ac.createMediaStreamSource(raw);
     // Mono in: a stereo microphone is mixed down first.
     const mix = ac.createGain();
@@ -65,7 +67,8 @@ export async function processMic(raw: MediaStream, mode: NoiseMode): Promise<Pro
     mix.channelInterpretation = 'speakers';
     const dest = ac.createMediaStreamDestination();
     dest.channelCount = 1;
-    src.connect(mix).connect(node).connect(dest);
+    if (second) src.connect(mix).connect(node).connect(second).connect(dest);
+    else src.connect(mix).connect(node).connect(dest);
     const track = dest.stream.getAudioTracks()[0];
     // Keep the original device label so the UI can still show it.
     return {
@@ -77,6 +80,8 @@ export async function processMic(raw: MediaStream, mode: NoiseMode): Promise<Pro
           mix.disconnect();
           node.disconnect();
           node.destroy?.();
+          second?.disconnect();
+          second?.destroy?.();
         } catch {}
         track.stop();
         raw.getTracks().forEach((t) => t.stop());

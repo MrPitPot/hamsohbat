@@ -975,12 +975,18 @@ function InputMode() {
       </div>
       {settings.voiceMode === 'vad' ? (
         <div className="field" style={{ marginTop: 16 }}>
-          <span className="field-label">{t('Input Sensitivity')}</span>
+          <div className="setting-row">
+            <div>
+              <b>{t('Automatically determine input sensitivity')}</b>
+              <small>{t('Your microphone opens when you speak and closes for background noise, by itself.')}</small>
+            </div>
+            <Toggle checked={settings.vadAuto !== false} onChange={(v) => updateSettings({ vadAuto: v })} />
+          </div>
           <div className="meter">
             <div className="meter-fill" style={{ width: pct(level) + '%' }} />
-            <div className="meter-mark" style={{ insetInlineStart: pct(settings.vadThreshold) + '%' }} />
+            <div className="meter-mark" style={{ insetInlineStart: pct(settings.vadAuto !== false ? voice.threshold() : settings.vadThreshold) + '%' }} />
           </div>
-          <input type="range" min={-100} max={0} value={settings.vadThreshold} className="wide-range" onChange={(e) => updateSettings({ vadThreshold: Number(e.target.value) })} />
+          {settings.vadAuto === false && <input type="range" min={-100} max={0} value={settings.vadThreshold} className="wide-range" onChange={(e) => updateSettings({ vadThreshold: Number(e.target.value) })} />}
           <small>{t('Your microphone is only sent when the bar passes the marker. Drag it right if friends hear background noise.')}</small>
         </div>
       ) : (

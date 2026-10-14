@@ -72,18 +72,19 @@ export function playSound(name: string) {
   try {
     const ctx = audioCtx();
     const now = ctx.currentTime + 0.01;
-    for (const [freq, at, dur, g = 1] of notes) {
+    for (const [f0, at, dur, g = 1] of notes) {
+      const freq = f0 * 0.5; // an octave lower than the table: warmer and easier on the ears
       const t0 = now + at;
       const env = ctx.createGain();
       env.gain.setValueAtTime(0.0001, t0);
-      env.gain.exponentialRampToValueAtTime(0.16 * g, t0 + 0.008);
+      env.gain.exponentialRampToValueAtTime(0.26 * g, t0 + 0.012);
       env.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
       env.connect(out!);
       // Fundamental plus two quiet overtones gives a soft bell-like timbre.
       for (const [mult, amp] of [
         [1, 1],
-        [2, 0.18],
-        [3, 0.06],
+        [2, 0.4],
+        [3, 0.12],
       ]) {
         const osc = ctx.createOscillator();
         const og = ctx.createGain();
@@ -149,25 +150,30 @@ export function playBuiltin(name: string, vol = 0.8) {
   try {
     const ctx = audioCtx();
     const dest = ctx.createGain();
-    dest.gain.value = Math.max(0, Math.min(1, vol)) * 0.5;
-    dest.connect(ctx.destination);
+    dest.gain.value = Math.max(0, Math.min(1, vol)) * 0.7;
+    // A low-pass filter takes the harsh top off the synthesized clips.
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 2600;
+    lp.Q.value = 0.5;
+    dest.connect(lp).connect(ctx.destination);
     const n = ctx.currentTime + 0.02;
     switch (name) {
       case 'airhorn':
-        for (const [at, d] of [[0, 0.18], [0.22, 0.18], [0.44, 0.7]]) for (const f of [440, 554, 659]) tone(ctx, dest, 'sawtooth', f, f * 0.98, n + at, d, 0.12);
+        for (const [at, d] of [[0, 0.18], [0.22, 0.18], [0.44, 0.7]]) for (const f of [196, 247, 294]) tone(ctx, dest, 'sawtooth', f, f * 0.98, n + at, d, 0.16);
         break;
       case 'quack':
-        for (const at of [0, 0.22]) tone(ctx, dest, 'sawtooth', 700, 380, n + at, 0.16, 0.25);
+        for (const at of [0, 0.22]) tone(ctx, dest, 'sawtooth', 330, 190, n + at, 0.18, 0.3);
         break;
       case 'cricket':
-        for (let i = 0; i < 9; i++) tone(ctx, dest, 'sine', 4200, 4300, n + i * 0.06 + (i > 3 ? 0.3 : 0), 0.04, 0.15);
+        for (let i = 0; i < 9; i++) tone(ctx, dest, 'sine', 2300, 2350, n + i * 0.07 + (i > 3 ? 0.3 : 0), 0.05, 0.2);
         break;
       case 'clap':
         for (let i = 0; i < 6; i++) noise(ctx, dest, n + i * 0.32 + Math.random() * 0.03, 0.12, 0.9, 900);
         break;
       case 'trombone':
-        [[392, 0], [370, 0.4], [349, 0.8]].forEach(([f, at]) => tone(ctx, dest, 'sawtooth', f, f * 0.99, n + at, 0.36, 0.15));
-        tone(ctx, dest, 'sawtooth', 330, 300, n + 1.2, 1.0, 0.15);
+        [[196, 0], [185, 0.4], [175, 0.8]].forEach(([f, at]) => tone(ctx, dest, 'sawtooth', f, f * 0.99, n + at, 0.36, 0.22));
+        tone(ctx, dest, 'sawtooth', 165, 140, n + 1.2, 1.0, 0.22);
         break;
       case 'rimshot':
         noise(ctx, dest, n, 0.08, 0.9, 200);
@@ -177,19 +183,19 @@ export function playBuiltin(name: string, vol = 0.8) {
         noise(ctx, dest, n + 0.42, 0.6, 0.6, 6000);
         break;
       case 'bell':
-        for (const [m, a] of [[1, 0.3], [2.76, 0.12], [5.4, 0.05]]) tone(ctx, dest, 'sine', 880 * m, 880 * m, n, 1.6, a);
+        for (const [m, a] of [[1, 0.3], [2.76, 0.12], [5.4, 0.05]]) tone(ctx, dest, 'sine', 440 * m, 440 * m, n, 1.6, a * 1.6);
         break;
       case 'drumroll':
         for (let i = 0; i < 24; i++) noise(ctx, dest, n + i * 0.05, 0.06, 0.3 + i * 0.02, 300);
         noise(ctx, dest, n + 1.25, 0.9, 0.9, 4000);
         break;
       case 'wow':
-        tone(ctx, dest, 'sawtooth', 220, 440, n, 0.35, 0.2);
-        tone(ctx, dest, 'sawtooth', 440, 200, n + 0.35, 0.5, 0.2);
+        tone(ctx, dest, 'sawtooth', 110, 220, n, 0.35, 0.26);
+        tone(ctx, dest, 'sawtooth', 220, 100, n + 0.35, 0.5, 0.26);
         break;
       case 'boing':
-        tone(ctx, dest, 'sine', 150, 600, n, 0.12, 0.4);
-        tone(ctx, dest, 'sine', 600, 200, n + 0.12, 0.4, 0.3);
+        tone(ctx, dest, 'sine', 90, 330, n, 0.12, 0.5);
+        tone(ctx, dest, 'sine', 330, 120, n + 0.12, 0.4, 0.4);
         break;
     }
   } catch {}

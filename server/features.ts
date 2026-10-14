@@ -549,8 +549,93 @@ export function registerFeatureRoutes(hub: Hub) {
   });
 }
 
+// ---------------------------------------------------------------- music: a queue everyone in a voice channel hears in sync
+let musicTable = false;
+const musicState = (hub: Hub, cid: string) => {
+  if (!musicTable) {
+    hub.run('CREATE TABLE IF NOT EXISTS music(channel_id TEXT PRIMARY KEY, state TEXT)');
+    musicTable = true;
+  }
+  const row = hub.one('SELECT state FROM music WHERE channel_id=?', cid);
+  return row ? JSON.parse(row.state) : { queue: [], index: 0, playing: false, startedAt: 0, pos: 0 };
+};
+function handleMusic(hub: Hub, ws: WebSocket, att: Att, m: any) {
+  if (!att.v) return;
+  const cid = att.v.c;
+  const ch = hub.one('SELECT * FROM channels WHERE id=?', cid);
+  if (!ch) return;
+  const st = musicState(hub, cid);
+  const now = Date.now();
+  const cmd = String(m.cmd || 'get');
+  const cur = () => st.index < st.queue.length;
+  const play = (index: number) => {
+    st.index = index;
+    st.playing = index < st.queue.length;
+    st.startedAt = now;
+    st.pos = 0;
+  };
+  if (cmd === 'add') {
+    const kind = m.kind === 'youtube' ? 'youtube' : 'audio';
+    let ref = String(m.ref || '').trim().slice(0, 500);
+    if (kind === 'youtube') {
+      const id = ref.match(/(?:v=|youtu\.be\/|embed\/|shorts\/)([\w-]{11})/)?.[1] || (/^[\w-]{11}$/.test(ref) ? ref : '');
+      if (!id) return;
+      ref = id;
+    } else if (!/^(https?:\/\/|\/api\/files\/)/.test(ref)) return;
+    if (st.queue.length >= 50) return;
+    st.queue.push({ kind, ref, title: str(m.title, 150) || ref, by: att.uid });
+    if (!st.playing && st.index >= st.queue.length - 1) play(st.queue.length - 1);
+  } else if (cmd === 'next') play(Math.min(st.queue.length, st.index + 1));
+  else if (cmd === 'prev') play(Math.max(0, st.index - 1));
+  else if (cmd === 'jump') play(Math.max(0, Math.min(st.queue.length - 1, Number(m.index) || 0)));
+  else if (cmd === 'ended') {
+    if (Number(m.index) === st.index && st.playing) play(st.index + 1);
+    else return;
+  } else if (cmd === 'pause') {
+    if (st.playing) {
+      st.pos += now - st.startedAt;
+      st.playing = false;
+    }
+  } else if (cmd === 'resume') {
+    if (!st.playing && cur()) {
+      st.playing = true;
+      st.startedAt = now;
+    }
+  } else if (cmd === 'seek') {
+    st.pos = Math.max(0, Number(m.pos) || 0);
+    st.startedAt = now;
+  } else if (cmd === 'remove') {
+    const i = Number(m.index);
+    if (i >= 0 && i < st.queue.length) {
+      st.queue.splice(i, 1);
+      if (i < st.index) st.index--;
+      else if (i === st.index) play(st.index);
+    }
+  } else if (cmd === 'clear') {
+    st.queue = [];
+    st.index = 0;
+    st.playing = false;
+    st.pos = 0;
+  } else if (cmd !== 'get') return;
+  if (cmd !== 'get') hub.run('INSERT OR REPLACE INTO music(channel_id, state) VALUES(?,?)', cid, JSON.stringify(st));
+  const ids = new Set<string>();
+  const targets: WebSocket[] = [];
+  for (const [sock, a] of hub.sockets() as [WebSocket, Att][]) if (a.v?.c === cid) targets.push(sock);
+  const payload = JSON.stringify({ op: 'MUSIC', channelId: cid, state: st, serverTime: now });
+  for (const sock of cmd === 'get' ? [ws] : targets) {
+    try {
+      sock.send(payload);
+    } catch {}
+  }
+  void ids;
+}
+
 // ---------------------------------------------------------------- socket operations
 export function handleFeatureSocket(hub: Hub, ws: WebSocket, att: Att, m: any): boolean {
+  if (m.op === 'music') {
+    handleMusic(hub, ws, att, m);
+    return true;
+  }
   if (m.op === 'idle') {
     const before = hub.statusOf(att.uid);
     att.idle = !!m.idle;

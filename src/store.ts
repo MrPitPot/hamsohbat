@@ -29,8 +29,10 @@ const defaultSettings = {
   serverOrder: [] as string[],
   streamQuality: '720p30',
   sbVolume: 80,
+  musicVolume: 70,
   autoIdle: 10,
   vadThreshold: -55, // dB; the microphone stays silent below this level
+  vadAuto: true, // automatic sensitivity
 };
 
 function loadSettings() {
@@ -60,6 +62,7 @@ const initial = () => ({
   jump: null as null | { channelId: string; messageId: string; n: number },
   replyTo: {} as Record<string, any>,
   notes: {} as Record<string, string>,
+  music: {} as Record<string, any>,
   activities: {} as Record<string, any>,
   imports: {} as Record<string, any>,
   sbFlash: {} as Record<string, { emoji: string; until: number }>,
@@ -558,6 +561,9 @@ function handle(ev: any) {
       patchServer(serverId, () => rest);
       break;
     }
+    case 'MUSIC':
+      set({ music: { ...s.music, [ev.channelId]: { ...ev.state, offset: ev.serverTime - Date.now(), at: Date.now() } } });
+      break;
     case 'NOTE':
       set({ notes: { ...s.notes, [ev.userId]: ev.note } });
       break;
