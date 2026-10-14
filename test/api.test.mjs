@@ -309,6 +309,13 @@ for (let i = 0; i < big.length; i += 4096) big[i] = (i / 4096) & 255;
 const upBig = await a.api('POST', '/api/files?name=big.bin', big, 'application/octet-stream');
 const dlBig = new Uint8Array(await (await fetch(BASE + upBig.data.url)).arrayBuffer());
 ok(dlBig.length === big.length && dlBig[4096 * 700] === big[4096 * 700], 'multi-chunk file round-trips');
+const store = (await a.api('GET', '/api/users/me/storage')).data;
+ok(store.used >= png.length + big.length && store.quota > 0, 'upload usage is counted against a quota');
+if (store.quota - store.used < 25 * 1024 * 1024) {
+  // Only when the server runs with a small UPLOAD_QUOTA_MB (e.g. `wrangler dev --var UPLOAD_QUOTA_MB:8`).
+  const over = await a.api('POST', '/api/files?name=over.bin', new Uint8Array(store.quota - store.used + 1), 'application/octet-stream');
+  ok(over.status === 413, 'upload past the quota is refused');
+}
 ok((await b.api('POST', `/api/channels/${text.id}/messages`, { attachments: [up.data.id] })).status === 400, "cannot attach someone else's upload");
 const withFile = await a.api('POST', `/api/channels/${text.id}/messages`, { attachments: [up.data.id, upBig.data.id] });
 ok(withFile.data.attachments.length === 2 && withFile.data.attachments[0].width === 1, 'message with attachments');
@@ -412,7 +419,7 @@ const tmp = new Client('x');
 tmp.token = login.data.token;
 ok((await tmp.api('GET', '/api/ice')).status === 401, 'other sessions are signed out after a password change');
 ok((await a.api('GET', '/api/ice')).data.iceServers.length > 0, 'ice servers');
-for (const bad of ['http://127.0.0.1:8787/', 'http://localhost/', 'http://192.168.1.1/', 'ftp://example.com/', 'http://[::1]/', 'nonsense'])
+for (const bad of ['http://127.0.0.1:8787/', 'http://localhost/', 'http://192.168.1.1/', 'ftp://example.com/', 'http://[::1]/', 'nonsense', 'http://0x7f.0.0.1/', 'http://2130706433/', 'http://[::ffff:127.0.0.1]/', 'http://169.254.169.254/latest/', 'http://localhost./'])
   ok((await a.api('GET', '/api/embed?url=' + encodeURIComponent(bad))).status === 400, 'link preview refuses ' + bad);
 const emb = await a.api('GET', '/api/embed?url=' + encodeURIComponent('https://example.com/'));
 ok(emb.status === 200, 'link preview endpoint answers');

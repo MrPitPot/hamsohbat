@@ -113,6 +113,7 @@ export const fa: Record<string, string> = {
   'Expires {date}': 'انقضا: {date}',
   'File is empty': 'فایل خالی است',
   'File is too large': 'فایل خیلی بزرگ است',
+  'Upload quota exceeded': 'فضای آپلود شما پر شده است؛ چند فایل قدیمی را پاک کنید',
   'Filters out background noise from your microphone.': 'نویز پس‌زمینه‌ی میکروفون را حذف می‌کند.',
   'Find or start a conversation': 'یافتن یا شروع گفتگو',
   Food: 'خوراکی',
