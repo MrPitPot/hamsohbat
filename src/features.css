@@ -314,3 +314,5 @@ fieldset.automod:disabled { opacity: 0.5; }
 .desktop-app img { -webkit-user-drag: none; }
 .desktop-app a { -webkit-user-drag: none; }
 
+.tag.ok { background: rgba(35, 165, 90, 0.15); color: var(--green); }
+.device-row .tag { margin-inline-start: 6px; }

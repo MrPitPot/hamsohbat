@@ -2,7 +2,7 @@
 // soundboard), audit log, mentions inbox, forwarding, notes, webhooks, AutoMod settings, two-factor auth,
 // account deletion, voice moderation (server mute/deafen, move, stage) and importing servers from Discord.
 import { P, ALL_PERMS, CH, REL, VOICE_LIKE, MAX_MESSAGE_LENGTH } from '../shared/perms';
-import { fail, json, str, randHex, hashPassword, verifyTotp, base32Encode } from './util';
+import { fail, json, str, randHex, hashPassword, base32Encode } from './util';
 import type { Att } from './index';
 
 type Hub = any;
@@ -416,13 +416,13 @@ export function registerFeatureRoutes(hub: Hub) {
   });
   on('POST', '/api/users/me/2fa/enable', async ({ me, body }: any) => {
     if (!me.totp_pending) fail('Start the setup first');
-    if (!(await verifyTotp(me.totp_pending, String(body.code || '')))) fail('Invalid two-factor code', 400);
+    if (!(await hub.checkTotp(me.id, me.totp_pending, String(body.code || '')))) fail('Invalid two-factor code', 400);
     hub.run('UPDATE users SET totp_secret=totp_pending, totp_pending=NULL WHERE id=?', me.id);
     hub.send([me.id], { op: 'ME_UPDATE', statusPref: me.status_pref, mfa: true });
   });
   on('POST', '/api/users/me/2fa/disable', async ({ me, body }: any) => {
     if (!me.totp_secret) return;
-    if (!(await verifyTotp(me.totp_secret, String(body.code || '')))) fail('Invalid two-factor code', 400);
+    if (!(await hub.checkTotp(me.id, me.totp_secret, String(body.code || '')))) fail('Invalid two-factor code', 400);
     hub.run('UPDATE users SET totp_secret=NULL WHERE id=?', me.id);
     hub.send([me.id], { op: 'ME_UPDATE', statusPref: me.status_pref, mfa: false });
   });

@@ -1,7 +1,7 @@
 // Account & navigation extras: username, two-factor auth, deleting the account, mic test, keybinds, activity,
 // the mentions inbox, the quick switcher (Ctrl+K), user notes and auto-idle.
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { AtSign, Gamepad2, Hash, Inbox, KeyRound, Search, ShieldCheck, Trash2, Volume2, Users, Music, Monitor } from 'lucide-react';
+import { AtSign, Gamepad2, Hash, Inbox, KeyRound, Search, ShieldCheck, Trash2, Volume2, Users, Music, Monitor, Smartphone, Globe, LogOut } from 'lucide-react';
 import qrcode from 'qrcode-generator';
 import { useStore, get, act, toast, openModal, closeModal, navigate, displayName, dmName, findChannel, sortedDms, orderedChannels, jumpTo, logout, updateSettings, wsSend, P, CH } from '../store';
 import { api } from '../api';
@@ -119,6 +119,91 @@ export function AccountExtras() {
             </button>
           </div>
         </div>
+      )}
+    </>
+  );
+}
+
+// ---------------------------------------------------------------- devices (login sessions)
+/** "Chrome on Windows", "Hamsohbat for Windows", … from what the server stored at login. */
+function deviceName(s: any) {
+  const ua: string = s.ua || '';
+  const os = /Android/.test(ua) ? 'Android' : /iPhone|iPad|iPod/.test(ua) ? 'iOS' : /Windows/.test(ua) ? 'Windows' : /Mac OS X|Macintosh/.test(ua) ? 'macOS' : /CrOS/.test(ua) ? 'ChromeOS' : /Linux/.test(ua) ? 'Linux' : '';
+  if (s.client === 'desktop') return t('Hamsohbat for Windows');
+  const browser = /Edg\//.test(ua) ? 'Edge' : /OPR\/|Opera/.test(ua) ? 'Opera' : /Firefox\//.test(ua) ? 'Firefox' : /Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : '';
+  if (browser && os) return t('{browser} on {os}', { browser, os });
+  return browser || os || t('Unknown device');
+}
+
+export function DevicesTab() {
+  const [list, setList] = useState<any[] | null>(null);
+  const load = () => api('GET', '/api/users/me/sessions').then((r) => setList(r.sessions), () => setList([]));
+  useEffect(() => {
+    load();
+  }, []);
+  const others = (list || []).filter((s) => !s.current);
+  const row = (s: any) => {
+    const Icon = s.client === 'desktop' ? Monitor : /Android|iPhone|iPad|Mobile/.test(s.ua) ? Smartphone : Globe;
+    return (
+      <div className="list-row device-row" key={s.id}>
+        <Icon size={28} className="muted" />
+        <div className="grow">
+          <b>
+            {deviceName(s)}
+            {s.current ? <span className="tag ok">{t('This device')}</span> : s.online && <span className="tag">{t('Online')}</span>}
+          </b>
+          <small>
+            {s.ip && (
+              <>
+                <span dir="ltr">{s.ip}</span> •{' '}
+              </>
+            )}
+            {s.current ? t('Signed in {date}', { date: fmtStamp(s.createdAt) }) : t('Last active {date}', { date: fmtStamp(s.lastUsed) })}
+          </small>
+        </div>
+        {!s.current && (
+          <button className="icon-btn danger" title={t('Sign Out')} onClick={() => act(api('DELETE', '/api/users/me/sessions/' + s.id)).then((r) => r !== undefined && (toast('Device signed out', 'ok'), load()))}>
+            <LogOut size={18} />
+          </button>
+        )}
+      </div>
+    );
+  };
+  return (
+    <>
+      <h2>{t('Devices')}</h2>
+      <p className="muted">{t('These are the devices signed in to your account. Sign out any you do not recognise, then change your password. A device that is not used for 30 days is signed out automatically.')}</p>
+      {!list ? (
+        <p className="muted">{t('Loading…')}</p>
+      ) : (
+        <>
+          <h3>{t('Current Device')}</h3>
+          {list.filter((s) => s.current).map(row)}
+          <h3>{t('Other Devices')}</h3>
+          {others.length ? others.map(row) : <p className="muted">{t('You are not signed in anywhere else.')}</p>}
+          {others.length > 0 && (
+            <button
+              className="btn danger"
+              style={{ marginTop: 16 }}
+              onClick={() =>
+                openModal('confirm', {
+                  title: t('Sign Out All Other Devices'),
+                  text: t('Every device except this one will be signed out.'),
+                  danger: true,
+                  action: t('Sign Out'),
+                  onConfirm: async () => {
+                    if ((await act(api('DELETE', '/api/users/me/sessions'))) !== undefined) {
+                      toast('Other devices signed out', 'ok');
+                      load();
+                    }
+                  },
+                })
+              }
+            >
+              <LogOut size={16} /> {t('Sign Out All Other Devices')}
+            </button>
+          )}
+        </>
       )}
     </>
   );

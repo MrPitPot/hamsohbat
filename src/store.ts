@@ -486,6 +486,9 @@ function notify(msg: any, serverId: string | null) {
 function handle(ev: any) {
   const s = get();
   switch (ev.op) {
+    // This device was signed out from another one (or the password changed): leave at once.
+    case 'SIGNED_OUT':
+      return logout(true);
     case 'READY': {
       retry = 0;
       const users: any = {};

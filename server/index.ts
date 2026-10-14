@@ -1,6 +1,6 @@
 import { DurableObject } from 'cloudflare:workers';
 import { P, ALL_PERMS, DEFAULT_PERMS, CH, REL, MAX_FILE_SIZE, MAX_MESSAGE_LENGTH, TIMEOUT_REMOVES, computeChannelPerms, VOICE_LIKE } from '../shared/perms';
-import { HttpError, fail, json, randHex, str, hashPassword, verifyTotp } from './util';
+import { HttpError, fail, tooMany, json, randHex, str, hashPassword, verifyTotp } from './util';
 import { registerFeatureRoutes, handleFeatureSocket } from './features';
 
 interface Env {
@@ -11,6 +11,9 @@ interface Env {
   TURN_KEY_API_TOKEN?: string;
   ICE_SERVERS?: string;
 }
+
+/** The caller's IP address (Cloudflare sets this header; the self-hosted server sets it from the socket). */
+const clientIp = (req: Request) => (req.headers.get('cf-connecting-ip') || '').slice(0, 64);
 
 export default {
   async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
@@ -35,6 +38,7 @@ const SCHEMA = `
 CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY, username TEXT UNIQUE COLLATE NOCASE, display_name TEXT, pass_hash TEXT, pass_salt TEXT,
   avatar TEXT, banner_color TEXT, bio TEXT DEFAULT '', status_pref TEXT DEFAULT 'online', custom_status TEXT DEFAULT '', created_at INTEGER);
 CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY, user_id TEXT, created_at INTEGER);
+CREATE TABLE IF NOT EXISTS auth_limits(key TEXT PRIMARY KEY, fails INTEGER, since INTEGER);
 CREATE TABLE IF NOT EXISTS relationships(user_id TEXT, target_id TEXT, type INTEGER, PRIMARY KEY(user_id, target_id));
 CREATE TABLE IF NOT EXISTS servers(id TEXT PRIMARY KEY, name TEXT, icon TEXT, owner_id TEXT, created_at INTEGER);
 CREATE TABLE IF NOT EXISTS members(server_id TEXT, user_id TEXT, nickname TEXT, joined_at INTEGER, PRIMARY KEY(server_id, user_id));
@@ -71,11 +75,20 @@ CREATE TABLE IF NOT EXISTS webhooks(id TEXT PRIMARY KEY, server_id TEXT, channel
 `;
 
 const CHUNK = 1024 * 1024;
+/** A login session (device) that is not used for this long is signed out. */
+const SESSION_IDLE_MS = 30 * 86400000;
+/** How often a session's "last used" time is written, so every request does not cause a write. */
+const SESSION_TOUCH_MS = 3600000;
+/** Brute-force protection: failed attempts allowed per window, per account and per IP address. */
+const LIMIT_WINDOW_MS = 15 * 60000;
+const LIMITS = { login: 10, ip: 50, totp: 5 };
 const INLINE_TYPES = /^(image\/(png|jpeg|gif|webp|avif)|video\/(mp4|webm|quicktime)|audio\/[\w.+-]+)$/;
 
 export interface Att {
   uid: string;
   sid: string;
+  /** id of the login session (device) the socket belongs to */
+  ses?: string;
   /** voice: channel, self mute/deaf, camera, screen stream, server mute/deaf, stage audience, raised hand */
   v?: { c: string; m: boolean; d: boolean; vid: boolean; scr: string | null; sm?: boolean; sd?: boolean; sup?: boolean; hand?: number };
   idle?: boolean;
@@ -226,6 +239,15 @@ export class Hub extends DurableObject<Env> {
       ['server_mute', 'INTEGER DEFAULT 0'],
       ['server_deaf', 'INTEGER DEFAULT 0'],
     ]);
+    add('sessions', [
+      ['id', 'TEXT'],
+      ['last_used', 'INTEGER'],
+      ['ip', "TEXT DEFAULT ''"],
+      ['ua', "TEXT DEFAULT ''"],
+      ['client', "TEXT DEFAULT ''"],
+    ]);
+    // Sessions from before devices could be listed get a public id; their age starts now so nobody is signed out at once.
+    for (const r of this.all('SELECT token FROM sessions WHERE id IS NULL')) this.run('UPDATE sessions SET id=?, last_used=? WHERE token=?', randHex(8), Date.now(), r.token);
     add('users', [
       ['pronouns', "TEXT DEFAULT ''"],
       ['totp_secret', 'TEXT'],
@@ -902,7 +924,7 @@ export class Hub extends DurableObject<Env> {
         r.keys.forEach((k, i) => (p[k] = decodeURIComponent(m[i + 1])));
         let me: any = null;
         if (!r.open) {
-          me = this.auth(req.headers.get('authorization')?.replace(/^Bearer /, '') || '');
+          me = this.auth(req.headers.get('authorization')?.replace(/^Bearer /, '') || '', clientIp(req));
           if (!me) return json({ error: 'Unauthorized' }, 401);
         }
         let body: any = {};
@@ -913,14 +935,83 @@ export class Hub extends DurableObject<Env> {
       }
       return json({ error: 'Not found' }, 404);
     } catch (e: any) {
-      if (e instanceof HttpError) return json({ error: e.message }, e.status);
+      if (e instanceof HttpError) return json({ error: e.message, ...e.extra }, e.status);
       console.error(e);
       return json({ error: 'Internal error' }, 500);
     }
   }
-  auth(token: string) {
+  /** Looks up the user of a session token; expired sessions are removed. `me.session_id` names the session. */
+  auth(token: string, ip?: string) {
     if (!token) return null;
-    return this.one('SELECT u.* FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token=?', token) || null;
+    const s = this.one('SELECT id, user_id, last_used, ip FROM sessions WHERE token=?', token);
+    if (!s) return null;
+    const now = Date.now();
+    if (now - (s.last_used || 0) > SESSION_IDLE_MS) {
+      this.run('DELETE FROM sessions WHERE token=?', token);
+      return null;
+    }
+    if (now - s.last_used > SESSION_TOUCH_MS || (ip && ip !== s.ip)) this.run('UPDATE sessions SET last_used=?, ip=? WHERE token=?', now, ip || s.ip, token);
+    const u = this.one('SELECT * FROM users WHERE id=?', s.user_id);
+    return u ? { ...u, session_id: s.id } : null;
+  }
+  /** Signs a user in on a new device and returns its token. */
+  createSession(uid: string, req: Request, client: any) {
+    const token = randHex(32);
+    const now = Date.now();
+    this.run(
+      'INSERT INTO sessions(token, user_id, created_at, id, last_used, ip, ua, client) VALUES(?,?,?,?,?,?,?,?)',
+      token,
+      uid,
+      now,
+      randHex(8),
+      now,
+      clientIp(req),
+      (req.headers.get('user-agent') || '').slice(0, 300),
+      client === 'desktop' ? 'desktop' : 'web'
+    );
+    // Housekeeping: forget long-unused sessions and old attempt counters.
+    this.run('DELETE FROM sessions WHERE last_used < ?', now - SESSION_IDLE_MS);
+    this.run('DELETE FROM auth_limits WHERE since < ?', now - LIMIT_WINDOW_MS);
+    return token;
+  }
+  /** Signs out sessions of a user (all, or all but one) and closes their open connections. */
+  endSessions(uid: string, opts: { only?: string; except?: string } = {}) {
+    const ids = this.all('SELECT id FROM sessions WHERE user_id=?', uid)
+      .map((r) => r.id as string)
+      .filter((id) => (opts.only ? id === opts.only : id !== opts.except));
+    for (const id of ids) this.run('DELETE FROM sessions WHERE user_id=? AND id=?', uid, id);
+    const set = new Set(ids);
+    for (const [ws, a] of this.sockets())
+      if (a.uid === uid && a.ses && set.has(a.ses))
+        try {
+          ws.send(JSON.stringify({ op: 'SIGNED_OUT' }));
+          ws.close(4001, 'signed out');
+        } catch {}
+    return ids.length;
+  }
+
+  // ---------- brute-force protection ----------
+  // An attempt is counted before the password or code is checked: checks are async, so counting afterwards would
+  // let a burst of parallel guesses all slip through. A successful attempt takes its count back.
+  /** Counts an attempt for `key`; throws 429 when `max` attempts were already used in the current window. */
+  useAttempt(key: string, max: number) {
+    const now = Date.now();
+    const r = this.one('SELECT fails, since FROM auth_limits WHERE key=?', key);
+    if (!r || r.since + LIMIT_WINDOW_MS <= now) return this.run('INSERT OR REPLACE INTO auth_limits(key, fails, since) VALUES(?,1,?)', key, now);
+    if (r.fails >= max) tooMany(Math.ceil((r.since + LIMIT_WINDOW_MS - now) / 60000));
+    this.run('UPDATE auth_limits SET fails=fails+1 WHERE key=?', key);
+  }
+  /** Takes back the attempt counted by useAttempt (it succeeded). */
+  refundAttempt(key: string) {
+    this.run('UPDATE auth_limits SET fails=MAX(fails-1, 0) WHERE key=?', key);
+  }
+  /** Checks a two-factor code with a per-account limit on wrong guesses (login, enabling and removing 2FA). */
+  async checkTotp(uid: string, secret: string, code: string) {
+    const key = 'totp:' + uid;
+    this.useAttempt(key, LIMITS.totp);
+    if (!(await verifyTotp(secret, code))) return false;
+    this.run('DELETE FROM auth_limits WHERE key=?', key);
+    return true;
   }
 
   openSocket(req: Request, url: URL): Response {
@@ -940,7 +1031,7 @@ export class Hub extends DurableObject<Env> {
     const wasOnline = this.onlineSet().has(me.id);
     const sid = randHex(8);
     this.ctx.acceptWebSocket(ws, [me.id]);
-    ws.serializeAttachment({ uid: me.id, sid } as Att);
+    ws.serializeAttachment({ uid: me.id, sid, ses: me.session_id } as Att);
     ws.send(JSON.stringify(this.ready(me, sid)));
     if (!wasOnline && me.status_pref !== 'invisible')
       this.send(null, { op: 'PRESENCE', userId: me.id, status: me.status_pref }, sid);
@@ -1107,7 +1198,7 @@ export class Hub extends DurableObject<Env> {
     this.on(
       'POST',
       '/api/auth/register',
-      async ({ body }) => {
+      async ({ body, req }) => {
         const username = str(body.username, 32).toLowerCase();
         const password = typeof body.password === 'string' ? body.password : '';
         if (this.env.REGISTRATION_CODE && body.code !== this.env.REGISTRATION_CODE) fail('Invalid registration code', 403);
@@ -1128,9 +1219,7 @@ export class Hub extends DurableObject<Env> {
           salt,
           Date.now()
         );
-        const token = randHex(32);
-        this.run('INSERT INTO sessions(token, user_id, created_at) VALUES(?,?,?)', token, id, Date.now());
-        return { token };
+        return { token: this.createSession(id, req, body.client) };
       },
       true
     );
@@ -1138,17 +1227,27 @@ export class Hub extends DurableObject<Env> {
     this.on(
       'POST',
       '/api/auth/login',
-      async ({ body }) => {
-        const u = this.one('SELECT * FROM users WHERE username=?', str(body.username, 32).toLowerCase());
+      async ({ body, req }) => {
+        const username = str(body.username, 32).toLowerCase();
+        // Attempts are counted before hashing, so guessing is slow and cannot be used to burn CPU.
+        const userKey = 'login:' + username;
+        // A loopback or missing address is a local proxy that did not say who the caller is: limiting it would lock
+        // everyone out together, so only the per-account limit applies then.
+        const ip = clientIp(req);
+        const ipKey = ip && !/^(127\.|::1$)/.test(ip) ? 'ip:' + ip : '';
+        if (ipKey) this.useAttempt(ipKey, LIMITS.ip);
+        this.useAttempt(userKey, LIMITS.login);
+        const u = this.one('SELECT * FROM users WHERE username=?', username);
         const hash = await hashPassword(String(body.password || ''), u?.pass_salt || 'x');
         if (!u || u.deleted || hash !== u.pass_hash) return fail('Wrong username or password', 401);
+        // The password was right: only wrong two-factor codes count from here on (they have their own limit).
+        if (ipKey) this.refundAttempt(ipKey);
+        this.run('DELETE FROM auth_limits WHERE key=?', userKey);
         if (u.totp_secret) {
           if (!body.code) return json({ error: 'Two-factor code required', mfa: true }, 401);
-          if (!(await verifyTotp(u.totp_secret, String(body.code)))) return fail('Invalid two-factor code', 401);
+          if (!(await this.checkTotp(u.id, u.totp_secret, String(body.code)))) return fail('Invalid two-factor code', 401);
         }
-        const token = randHex(32);
-        this.run('INSERT INTO sessions(token, user_id, created_at) VALUES(?,?,?)', token, u.id, Date.now());
-        return { token };
+        return { token: this.createSession(u.id, req, body.client) };
       },
       true
     );
@@ -1156,6 +1255,31 @@ export class Hub extends DurableObject<Env> {
     this.on('POST', '/api/auth/logout', ({ req }) => {
       this.run('DELETE FROM sessions WHERE token=?', req.headers.get('authorization')!.replace(/^Bearer /, ''));
     });
+
+    // ----- devices (login sessions) -----
+    this.on('GET', '/api/users/me/sessions', ({ me }) => {
+      const online = new Set(this.sockets().filter(([, a]) => a.uid === me.id).map(([, a]) => a.ses));
+      const rows = this.all('SELECT id, created_at, last_used, ip, ua, client FROM sessions WHERE user_id=? ORDER BY last_used DESC', me.id);
+      return {
+        sessions: rows.map((r) => ({
+          id: r.id,
+          current: r.id === me.session_id,
+          online: online.has(r.id),
+          client: r.client || 'web',
+          ua: r.ua || '',
+          ip: r.ip || '',
+          createdAt: r.created_at,
+          lastUsed: r.last_used,
+          expiresAt: r.last_used + SESSION_IDLE_MS,
+        })),
+      };
+    });
+    this.on('DELETE', '/api/users/me/sessions/:id', ({ me, p }) => {
+      if (p.id === me.session_id) fail('Use Log Out to end this session');
+      if (!this.endSessions(me.id, { only: p.id })) fail('Session not found', 404);
+    });
+    // Signs out every device except this one.
+    this.on('DELETE', '/api/users/me/sessions', ({ me }) => ({ count: this.endSessions(me.id, { except: me.session_id }) }));
 
     this.on('PATCH', '/api/users/me', async ({ me, body }) => {
       if (body.username !== undefined && str(body.username, 32).toLowerCase() !== me.username) {
@@ -1194,7 +1318,7 @@ export class Hub extends DurableObject<Env> {
       const salt = randHex(16);
       this.run('UPDATE users SET pass_hash=?, pass_salt=? WHERE id=?', await hashPassword(pw, salt), salt, me.id);
       // Every other device is signed out.
-      this.run('DELETE FROM sessions WHERE user_id=? AND token<>?', me.id, req.headers.get('authorization')!.replace(/^Bearer /, ''));
+      this.endSessions(me.id, { except: me.session_id });
     });
 
     // ----- friends -----

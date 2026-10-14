@@ -44,7 +44,8 @@ function Auth() {
     setBusy(true);
     setError('');
     try {
-      const r = await api('POST', '/api/auth/' + mode, mode === 'login' ? { username: f.username, password: f.password, ...(mfa ? { code: otp } : {}) } : f);
+      const client = isDesktop ? 'desktop' : 'web';
+      const r = await api('POST', '/api/auth/' + mode, mode === 'login' ? { username: f.username, password: f.password, client, ...(mfa ? { code: otp } : {}) } : { ...f, client });
       login(r.token);
     } catch (err: any) {
       // Accounts with two-factor auth need a code from the authenticator app.
