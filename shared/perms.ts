@@ -110,6 +110,8 @@ export const TEXT_LIKE: number[] = [CH.TEXT, CH.ANNOUNCEMENT, CH.THREAD, CH.VOIC
 export const VOICE_LIKE: number[] = [CH.VOICE, CH.STAGE, CH.DM, CH.GROUP];
 export const REL = { FRIEND: 1, BLOCKED: 2, INCOMING: 3, OUTGOING: 4 } as const;
 export const MAX_FILE_SIZE = 25 * 1024 * 1024;
+/** Default total upload space per user; override with the UPLOAD_QUOTA_MB setting. */
+export const DEFAULT_UPLOAD_QUOTA_MB = 1024;
 export const MAX_MESSAGE_LENGTH = 4000;
 
 /** Discord-style permission calculation for one channel (also used by the client to hide buttons). */

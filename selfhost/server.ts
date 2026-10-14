@@ -1,8 +1,9 @@
 // Self-hosted server: runs the exact same Hub as Cloudflare, on Node 22.5+ with a local SQLite file.
-// Usage: node server.mjs   (env: PORT, HOST, DATA_DIR, REGISTRATION_CODE, ICE_SERVERS, TURN_KEY_ID, TURN_KEY_API_TOKEN)
+// Usage: node server.mjs   (env: PORT, HOST, DATA_DIR, REGISTRATION_CODE, ICE_SERVERS, TURN_KEY_ID, TURN_KEY_API_TOKEN, UPLOAD_QUOTA_MB)
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
+import dns from 'node:dns';
 import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
@@ -68,6 +69,9 @@ const env = {
   ICE_SERVERS: process.env.ICE_SERVERS || '',
   TURN_KEY_ID: process.env.TURN_KEY_ID || '',
   TURN_KEY_API_TOKEN: process.env.TURN_KEY_API_TOKEN || '',
+  UPLOAD_QUOTA_MB: process.env.UPLOAD_QUOTA_MB || '',
+  // On a VPS the server can reach the local network, so link previews check where a name really points.
+  RESOLVE_HOST: async (host: string) => (await dns.promises.lookup(host, { all: true })).map((a) => a.address),
 };
 const hub: any = new Hub(ctx as any, env as any);
 

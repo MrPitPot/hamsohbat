@@ -67,6 +67,7 @@ sudo systemctl daemon-reload && sudo systemctl restart hamsohbat coturn
 | `DATA_DIR` | محل پایگاه‌داده و فایل‌ها (`hamsohbat.db`) — از همین فایل نسخه‌ی پشتیبان بگیرید |
 | `REGISTRATION_CODE` | اگر مقدار داشته باشد، ثبت‌نام فقط با این کد ممکن است |
 | `ICE_SERVERS` | فهرست JSON سرورهای STUN/TURN |
+| `UPLOAD_QUOTA_MB` | سقف کل فایل‌هایی که هر کاربر می‌تواند آپلود کند، به مگابایت (پیش‌فرض 1024) |
 
 ## پشتیبان‌گیری
 

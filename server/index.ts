@@ -1,5 +1,5 @@
 import { DurableObject } from 'cloudflare:workers';
-import { P, ALL_PERMS, DEFAULT_PERMS, CH, REL, MAX_FILE_SIZE, MAX_MESSAGE_LENGTH, TIMEOUT_REMOVES, computeChannelPerms, VOICE_LIKE } from '../shared/perms';
+import { P, ALL_PERMS, DEFAULT_PERMS, CH, REL, MAX_FILE_SIZE, DEFAULT_UPLOAD_QUOTA_MB, MAX_MESSAGE_LENGTH, TIMEOUT_REMOVES, computeChannelPerms, VOICE_LIKE } from '../shared/perms';
 import { HttpError, fail, json, randHex, str, hashPassword, verifyTotp } from './util';
 import { registerFeatureRoutes, handleFeatureSocket } from './features';
 
@@ -10,6 +10,10 @@ interface Env {
   TURN_KEY_ID?: string;
   TURN_KEY_API_TOKEN?: string;
   ICE_SERVERS?: string;
+  /** Total upload space per user in MB (default 1024). */
+  UPLOAD_QUOTA_MB?: string;
+  /** Self-host only: resolves a hostname to its IPs so link previews can refuse names that point inside the network. */
+  RESOLVE_HOST?: (host: string) => Promise<string[]>;
 }
 
 export default {
@@ -54,6 +58,7 @@ CREATE TABLE IF NOT EXISTS read_states(user_id TEXT, channel_id TEXT, last_read_
 CREATE TABLE IF NOT EXISTS invites(code TEXT PRIMARY KEY, server_id TEXT, creator_id TEXT, created_at INTEGER, expires_at INTEGER, max_uses INTEGER DEFAULT 0, uses INTEGER DEFAULT 0);
 CREATE TABLE IF NOT EXISTS bans(server_id TEXT, user_id TEXT, reason TEXT, PRIMARY KEY(server_id, user_id));
 CREATE TABLE IF NOT EXISTS files(id TEXT PRIMARY KEY, name TEXT, type TEXT, size INTEGER, width INTEGER, height INTEGER, uploader_id TEXT, ref TEXT, created_at INTEGER);
+CREATE INDEX IF NOT EXISTS files_uploader ON files(uploader_id);
 CREATE TABLE IF NOT EXISTS file_chunks(file_id TEXT, idx INTEGER, data BLOB, PRIMARY KEY(file_id, idx));
 CREATE TABLE IF NOT EXISTS embeds(url TEXT PRIMARY KEY, data TEXT, fetched_at INTEGER);
 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT);
@@ -90,14 +95,63 @@ interface Ctx {
 }
 export type Handler = (c: Ctx) => any;
 
-/** Refuses obviously internal addresses so link previews cannot be used to probe a private network. */
-function isPrivateHost(host: string) {
-  const h = host.toLowerCase().replace(/^\[|\]$/g, '');
-  if (h === 'localhost' || h.endsWith('.localhost') || h.endsWith('.local') || h.endsWith('.internal') || !h.includes('.') || h.includes(':')) return true;
+/** Refuses internal addresses so link previews cannot be used to probe a private network. */
+export function isPrivateHost(host: string) {
+  const h = host.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '');
+  // Any IPv6 literal (including IPv4-mapped forms) and dotless names are refused outright.
+  if (h === 'localhost' || h.endsWith('.localhost') || h.endsWith('.local') || h.endsWith('.internal') || h.endsWith('.lan') || h.endsWith('.home.arpa') || !h.includes('.') || h.includes(':')) return true;
+  // `new URL` already normalizes hex/octal/short IPv4 forms (0x7f.1, 2130706433) to dotted decimal.
   const m = h.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
-  if (!m) return false;
-  const [a, b] = [Number(m[1]), Number(m[2])];
-  return a === 10 || a === 127 || a === 0 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127);
+  if (!m) return /^[\d.]+$/.test(h);
+  return isPrivateIPv4(m.slice(1).map(Number));
+}
+function isPrivateIPv4([a, b, c]: number[]) {
+  return (
+    a === 0 || a === 10 || a === 127 || a >= 224 ||
+    (a === 100 && b >= 64 && b <= 127) ||
+    (a === 169 && b === 254) ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 168) ||
+    (a === 192 && b === 0 && (c === 0 || c === 2)) ||
+    (a === 198 && (b === 18 || b === 19)) ||
+    (a === 198 && b === 51 && c === 100) ||
+    (a === 203 && b === 0 && c === 113)
+  );
+}
+/** True for resolved addresses (v4 or v6) that are not on the public internet. */
+export function isPrivateIP(ip: string) {
+  const v = ip.toLowerCase().replace(/^\[|\]$/g, '');
+  const mapped = v.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
+  const v4 = (mapped?.[1] ?? v).match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+  if (v4) return isPrivateIPv4(v4.slice(1).map(Number));
+  if (!v.includes(':')) return true;
+  return v === '::' || v === '::1' || /^(fc|fd|fe[89ab]|ff)/.test(v) || v.startsWith('::ffff:') || v.startsWith('64:ff9b:') || v.startsWith('2001:db8');
+}
+
+const MAX_REDIRECTS = 5;
+/**
+ * Fetches a link for a preview, following redirects by hand so every hop is checked:
+ * only http(s), never a private host, and (on self-host) never a name that resolves inside the network.
+ */
+async function safeFetch(start: URL, init: RequestInit, resolve?: Env['RESOLVE_HOST']) {
+  let url = start;
+  for (let hop = 0; ; hop++) {
+    if (!/^https?:$/.test(url.protocol) || url.username || url.password || isPrivateHost(url.hostname)) return null;
+    if (resolve) {
+      const ips = await resolve(url.hostname).catch(() => [] as string[]);
+      if (!ips.length || ips.some(isPrivateIP)) return null;
+    }
+    const res = await fetch(url.href, { ...init, redirect: 'manual' });
+    if (res.status < 300 || res.status >= 400 || res.status === 304) return { res, url };
+    res.body?.cancel();
+    const loc = res.headers.get('location');
+    if (!loc || hop >= MAX_REDIRECTS) return null;
+    try {
+      url = new URL(loc, url);
+    } catch {
+      return null;
+    }
+  }
 }
 
 const decodeEntities = (s: string) =>
@@ -110,15 +164,20 @@ const decodeEntities = (s: string) =>
     .replace(/&gt;/g, '>')
     .replace(/&amp;/g, '&');
 
-async function fetchEmbed(url: URL) {
+async function fetchEmbed(url: URL, resolve?: Env['RESOLVE_HOST']) {
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), 6000);
   try {
-    const res = await fetch(url.href, {
-      redirect: 'follow',
-      signal: ctl.signal,
-      headers: { 'user-agent': 'Mozilla/5.0 (compatible; HamsohbatBot/1.0; +link-preview)', accept: 'text/html,image/*;q=0.8,*/*;q=0.5' },
-    });
+    const got = await safeFetch(
+      url,
+      {
+        signal: ctl.signal,
+        headers: { 'user-agent': 'Mozilla/5.0 (compatible; HamsohbatBot/1.0; +link-preview)', accept: 'text/html,image/*;q=0.8,*/*;q=0.5' },
+      },
+      resolve
+    );
+    if (!got) return null;
+    const { res, url: final } = got;
     if (!res.ok) return null;
     const type = (res.headers.get('content-type') || '').toLowerCase();
     if (type.startsWith('image/')) {
@@ -156,7 +215,7 @@ async function fetchEmbed(url: URL) {
     let image = meta('og:image') || meta('twitter:image');
     if (image) {
       try {
-        image = new URL(image, res.url || url.href).href;
+        image = new URL(image, final.href).href;
       } catch {
         image = '';
       }
@@ -693,6 +752,17 @@ export class Hub extends DurableObject<Env> {
       this.run('DELETE FROM file_chunks WHERE file_id=?', id);
       this.run('DELETE FROM files WHERE id=?', id);
     }
+  }
+  uploadQuota() {
+    const mb = Number(this.env.UPLOAD_QUOTA_MB);
+    return (mb > 0 ? mb : DEFAULT_UPLOAD_QUOTA_MB) * 1024 * 1024;
+  }
+  uploadUsage(uid: string): number {
+    return this.one('SELECT COALESCE(SUM(size), 0) AS n FROM files WHERE uploader_id=?', uid).n;
+  }
+  /** Fails with 413 when storing `size` more bytes would put the user over their upload quota. */
+  checkQuota(uid: string, size: number) {
+    if (this.uploadUsage(uid) + size > this.uploadQuota()) fail('Upload quota exceeded', 413);
   }
   fileIdFromUrl(url: string | null) {
     return url?.match(/^\/api\/files\/([0-9a-f]+)/)?.[1];
@@ -1895,6 +1965,7 @@ export class Hub extends DurableObject<Env> {
       const buf = new Uint8Array(await req.arrayBuffer());
       if (!buf.length) fail('File is empty');
       if (buf.length > MAX_FILE_SIZE) fail('File is too large', 413);
+      this.checkQuota(me.id, buf.length);
       const id = randHex(16);
       const name = (q.get('name') || 'file').replace(/[\\/\x00-\x1f"]/g, '_').slice(0, 200) || 'file';
       const type = (req.headers.get('content-type') || 'application/octet-stream').split(';')[0].trim().slice(0, 100);
@@ -1913,6 +1984,7 @@ export class Hub extends DurableObject<Env> {
         this.run('INSERT INTO file_chunks(file_id, idx, data) VALUES(?,?,?)', id, n, buf.slice(i, i + CHUNK).buffer);
       return { id, name, type, size: buf.length, url: `/api/files/${id}` };
     });
+    this.on('GET', '/api/users/me/storage', ({ me }) => ({ used: this.uploadUsage(me.id), quota: this.uploadQuota() }));
     const serveFile: Handler = ({ p }) => {
       const f = this.one('SELECT * FROM files WHERE id=?', p.id);
       if (!f) return json({ error: 'Not found' }, 404);
@@ -1958,7 +2030,7 @@ export class Hub extends DurableObject<Env> {
       const key = url.href.slice(0, 2000);
       const cached = this.one('SELECT data, fetched_at FROM embeds WHERE url=?', key);
       if (cached && Date.now() - cached.fetched_at < (cached.data ? 86400000 : 3600000)) return { embed: JSON.parse(cached.data || 'null') };
-      const embed = await fetchEmbed(url).catch(() => null);
+      const embed = await fetchEmbed(url, this.env.RESOLVE_HOST).catch(() => null);
       this.run('INSERT OR REPLACE INTO embeds(url, data, fetched_at) VALUES(?,?,?)', key, embed ? JSON.stringify(embed) : null, Date.now());
       return { embed };
     });

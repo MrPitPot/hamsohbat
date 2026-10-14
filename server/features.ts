@@ -695,6 +695,7 @@ async function fetchToFile(hub: Hub, uid: string, url: string, name: string, max
     if (!r.ok) return null;
     const buf = new Uint8Array(await r.arrayBuffer());
     if (!buf.length || buf.length > maxBytes) return null;
+    if (hub.uploadUsage(uid) + buf.length > hub.uploadQuota()) return null;
     const id = randHex(16);
     const type = (r.headers.get('content-type') || 'application/octet-stream').split(';')[0];
     hub.run('INSERT INTO files(id, name, type, size, uploader_id, created_at) VALUES(?,?,?,?,?,?)', id, name.slice(0, 200), type, buf.length, uid, Date.now());
