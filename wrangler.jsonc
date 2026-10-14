@@ -1,0 +1,23 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "hamsohbat",
+  "main": "server/index.ts",
+  "compatibility_date": "2025-01-15",
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/ws"]
+  },
+  "durable_objects": {
+    "bindings": [{ "name": "HUB", "class_name": "Hub" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Hub"] }],
+  "vars": {
+    // اگر مقدار بدهید، ثبت‌نام فقط با این کد ممکن است (برای خصوصی نگه داشتن برنامه)
+    "REGISTRATION_CODE": "",
+    // اختیاری: کلید Cloudflare Realtime TURN برای وقتی که تماس مستقیم برقرار نمی‌شود
+    "TURN_KEY_ID": ""
+    // TURN_KEY_API_TOKEN را با `wrangler secret put TURN_KEY_API_TOKEN` تنظیم کنید
+  }
+}

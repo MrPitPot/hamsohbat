@@ -1,0 +1,7 @@
+# Replace chat.example.ir with your own domain (its DNS A record must point to this server).
+# Caddy gets and renews the HTTPS certificate automatically. Browsers only allow the
+# microphone and camera on HTTPS, so HTTPS is required for voice and video.
+chat.example.ir {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:3000
+}

@@ -1,0 +1,30 @@
+#include <winver.h>
+#include "version.h"
+1 ICON "app.ico"
+1 24 "app.manifest"
+200 RCDATA "build/ui.pack"
+
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION APP_VERSION_NUM
+PRODUCTVERSION APP_VERSION_NUM
+FILEOS VOS_NT_WINDOWS32
+FILETYPE VFT_APP
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "040904B0"
+    BEGIN
+      VALUE "CompanyName", "Hamsohbat"
+      VALUE "FileDescription", "Hamsohbat"
+      VALUE "FileVersion", APP_VERSION_STR
+      VALUE "ProductName", "Hamsohbat"
+      VALUE "ProductVersion", APP_VERSION_STR
+      VALUE "OriginalFilename", "Hamsohbat.exe"
+      VALUE "LegalCopyright", "Hamsohbat"
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x409, 1200
+  END
+END

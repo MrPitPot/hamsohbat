@@ -1,0 +1,76 @@
+<!-- Windows Installer package for Hamsohbat: per-user (no admin rights), installs into
+     %LOCALAPPDATA%\Programs\Hamsohbat, adds Start menu / desktop shortcuts, starts with Windows
+     and opens the app when done. Updates are major upgrades of the same UpgradeCode. -->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="Hamsohbat" Manufacturer="Hamsohbat" Version="$(var.Version)" UpgradeCode="88c3a95e-08c8-4619-a99e-141c22922d23"
+           Scope="perUser" Compressed="yes" InstallerVersion="500" Language="1033">
+    <SummaryInformation Description="Hamsohbat - chat, voice and video with friends" Manufacturer="Hamsohbat" />
+    <MajorUpgrade DowngradeErrorMessage="A newer version of Hamsohbat is already installed." AllowSameVersionUpgrades="yes" />
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+
+    <Icon Id="AppIcon" SourceFile="app.ico" />
+    <Property Id="ARPPRODUCTICON" Value="AppIcon" />
+    <Property Id="ARPNOMODIFY" Value="1" />
+    <Property Id="ARPNOREPAIR" Value="1" />
+    <Property Id="ARPURLINFOABOUT" Value="$(var.Server)" />
+
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="ProgramsDir" Name="Programs">
+        <Directory Id="INSTALLFOLDER" Name="Hamsohbat" />
+      </Directory>
+    </StandardDirectory>
+    <!-- Remember where the app was installed, so updates and uninstall use the same folder. -->
+    <Property Id="SAVEDINSTALLDIR">
+      <RegistrySearch Id="SavedInstallDir" Root="HKCU" Key="Software\Hamsohbat" Name="InstallDir" Type="raw" />
+    </Property>
+    <SetDirectory Id="INSTALLFOLDER" Value="[SAVEDINSTALLDIR]" Condition="SAVEDINSTALLDIR AND NOT INSTALLFOLDER_SET" Sequence="both" />
+    <StandardDirectory Id="ProgramMenuFolder" />
+    <StandardDirectory Id="DesktopFolder" />
+
+    <ComponentGroup Id="AppFiles" Directory="INSTALLFOLDER">
+      <Component Id="AppExe" Guid="5d0b3e57-8a3d-4b8a-9d3e-2a0c1f6e7b11">
+        <File Id="HamsohbatExe" Source="build\Hamsohbat.exe" KeyPath="no" />
+        <RegistryValue Root="HKCU" Key="Software\Hamsohbat" Name="InstallDir" Type="string" Value="[INSTALLFOLDER]" KeyPath="yes" />
+        <RemoveFolder Id="RemoveInstallFolder" Directory="INSTALLFOLDER" On="uninstall" />
+        <RemoveFolder Id="RemoveProgramsDir" Directory="ProgramsDir" On="uninstall" />
+        <!-- Version 1.1 installed itself without Windows Installer; drop its old "Apps" entry. -->
+        <RemoveRegistryKey Root="HKCU" Key="Software\Microsoft\Windows\CurrentVersion\Uninstall\Hamsohbat" Action="removeOnInstall" />
+      </Component>
+      <!-- Connects to TeamSpeak 3 servers (launched by the app when needed). -->
+      <Component Id="TeamSpeakBridge" Guid="af675d59-e70b-4b91-b38d-5e5e592a82b3">
+        <File Id="HsTeamspeakExe" Source="build\hs-teamspeak.exe" KeyPath="no" />
+        <RegistryValue Root="HKCU" Key="Software\Hamsohbat" Name="TeamSpeakBridge" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+      <!-- Starts with Windows, minimized to the tray, like Discord. Can be turned off in the app. -->
+      <Component Id="Autostart" Guid="a7f2c9d4-3b1e-4f6a-8c2d-9e0b1a2c3d44">
+        <RegistryValue Root="HKCU" Key="Software\Microsoft\Windows\CurrentVersion\Run" Name="Hamsohbat" Type="string"
+                       Value="&quot;[INSTALLFOLDER]Hamsohbat.exe&quot; --minimized" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <Component Id="StartMenuShortcut" Directory="ProgramMenuFolder" Guid="c41d8e2f-6a5b-4c7d-9e1f-0a2b3c4d5e66">
+      <Shortcut Id="StartMenu" Name="Hamsohbat" Description="Chat, voice and video with friends" Target="[INSTALLFOLDER]Hamsohbat.exe" WorkingDirectory="INSTALLFOLDER">
+        <ShortcutProperty Key="System.AppUserModel.ID" Value="Hamsohbat.Desktop" />
+      </Shortcut>
+      <RegistryValue Root="HKCU" Key="Software\Hamsohbat" Name="StartMenuShortcut" Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+    <Component Id="DesktopShortcut" Directory="DesktopFolder" Guid="e93b1c2d-4f5a-4b6c-8d7e-1f2a3b4c5d77">
+      <Shortcut Id="Desktop" Name="Hamsohbat" Description="Chat, voice and video with friends" Target="[INSTALLFOLDER]Hamsohbat.exe" WorkingDirectory="INSTALLFOLDER">
+        <ShortcutProperty Key="System.AppUserModel.ID" Value="Hamsohbat.Desktop" />
+      </Shortcut>
+      <RegistryValue Root="HKCU" Key="Software\Hamsohbat" Name="DesktopShortcut" Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+
+    <Feature Id="Main" Title="Hamsohbat" Level="1">
+      <ComponentGroupRef Id="AppFiles" />
+      <ComponentRef Id="StartMenuShortcut" />
+      <ComponentRef Id="DesktopShortcut" />
+    </Feature>
+
+    <!-- Open the app when installation (or an update) finishes. NOLAUNCH=1 skips this (used by tests). -->
+    <CustomAction Id="LaunchApp" Directory="INSTALLFOLDER" ExeCommand="&quot;[INSTALLFOLDER]Hamsohbat.exe&quot;" Execute="immediate" Return="asyncNoWait" Impersonate="yes" />
+    <InstallExecuteSequence>
+      <Custom Action="LaunchApp" After="InstallFinalize" Condition="NOT Installed AND NOT REMOVE AND NOT NOLAUNCH" />
+    </InstallExecuteSequence>
+  </Package>
+</Wix>

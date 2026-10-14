@@ -1,0 +1,17 @@
+[Unit]
+Description=Hamsohbat chat server
+After=network.target
+
+[Service]
+WorkingDirectory=/opt/hamsohbat
+ExecStart=/usr/bin/node /opt/hamsohbat/server.mjs
+Environment=PORT=3000
+Environment=HOST=127.0.0.1
+Environment=DATA_DIR=/opt/hamsohbat/data
+# Environment=REGISTRATION_CODE=choose-a-secret-code
+# Environment=ICE_SERVERS=[{"urls":"stun:chat.example.ir:3478"},{"urls":"turn:chat.example.ir:3478","username":"hamsohbat","credential":"choose-a-password"}]
+Restart=always
+User=www-data
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,14 @@
+node_modules
+dist
+.wrangler
+.dev.vars
+*.log
+
+release
+desktop/build
+desktop/.deps
+public/downloads
+server-url.txt
+test/browser-users.json
+desktop/teamspeak/target
+.claude
