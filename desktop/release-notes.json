@@ -1,4 +1,4 @@
 {
-  "fa": "• موسیقی در کانال صوتی: لینک یوتیوب یا فایل صوتی، صف مشترک و پخش هم‌زمان برای همه\n• حساسیت خودکار میکروفون (مثل دیسکورد) و حالت دستی؛ برای همصحبت و تیم‌اسپیک\n• حذف نویز خیلی قوی (دو مرحله‌ای)\n• صدای افکت‌ها و ساندبورد پایین‌تر، گرم‌تر و واضح‌تر شد\n• تیم‌اسپیک: با یک کلیک وارد کانال می‌شوید، و ادمین کیفیت کانال را تنظیم می‌کند\n• رله‌ی TURN برای تماس‌هایی که مستقیم وصل نمی‌شوند",
-  "en": "• Music in voice channels: YouTube links or audio files, one shared queue, synced for everyone\n• Automatic input sensitivity (like Discord) and manual mode, for Hamsohbat and TeamSpeak\n• Extra-strong two-stage noise cancellation\n• Interface sounds and the soundboard are lower, warmer and clearer\n• TeamSpeak: one click joins a channel, and admins can set channel quality\n• TURN relay fallback for calls that cannot connect directly"
+  "fa": "• تماس، وبکم و استریم حتی وقتی دو نفر مستقیم به هم وصل نمی‌شوند کار می‌کند (از طریق خود سرور)\n• حساسیت خودکار میکروفون و حذف نویز خیلی قوی\n• تیم‌اسپیک: ورود با یک کلیک و تنظیم کیفیت کانال\n• صدای افکت‌ها و ساندبورد واضح‌تر شد",
+  "en": "• Calls, webcam and screen share now work even when two people cannot connect directly (relayed through your server)\n• Automatic input sensitivity and extra-strong noise cancellation\n• TeamSpeak: one-click join and channel quality\n• Clearer interface sounds and soundboard"
 }

@@ -983,7 +983,27 @@ export class Hub extends DurableObject<Env> {
   }
 
   async webSocketMessage(ws: WebSocket, raw: string | ArrayBuffer) {
-    if (typeof raw !== 'string') return;
+    if (typeof raw !== 'string') {
+      // Relay frame for people who cannot connect directly: [kind][sidLen][target sid][...]; forwarded with the sender's sid.
+      try {
+        const u = new Uint8Array(raw);
+        const att = ws.deserializeAttachment() as Att;
+        if (!att?.v || u.length < 4 || u.length > 600000) return;
+        const target = new TextDecoder().decode(u.subarray(2, 2 + u[1]));
+        for (const [peer, pa] of this.sockets()) {
+          if (pa.sid !== target || pa.v?.c !== att.v.c) continue;
+          const from = new TextEncoder().encode(att.sid);
+          const rest = u.subarray(2 + u[1]);
+          const out = new Uint8Array(2 + from.length + rest.length);
+          out[0] = u[0];
+          out[1] = from.length;
+          out.set(from, 2);
+          out.set(rest, 2 + from.length);
+          peer.send(out.buffer);
+        }
+      } catch {}
+      return;
+    }
     try {
       const m = JSON.parse(raw);
       const att = ws.deserializeAttachment() as Att;

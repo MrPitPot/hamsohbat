@@ -1,18 +1,15 @@
 # Project status
 
-**Version 1.5.0** — deployed to Cloudflare, installed locally, published at https://github.com/MrPitPot/hamsohbat
+**Version 1.6.0** — https://github.com/MrPitPot/hamsohbat
 
-## Done in 1.5.0
-- TeamSpeak: single click joins a channel; admins can set channel voice quality.
-- Calls: public TURN relay fallback + "can't connect directly" hint (add own TURN key for reliability, see README).
-- Input sensitivity: automatic (noise-floor tracking) + manual, for Hamsohbat and TeamSpeak. Extra-strong two-stage noise cancellation.
-- Interface sounds and soundboard re-tuned lower and warmer.
-- Music in voice channels (YouTube links / audio files, shared synced queue).
+## Latest
+- Server relay fallback (src/relay.ts + Hub binary forwarding): when two people cannot connect peer-to-peer, audio, camera and screen share are recorded (MediaRecorder), forwarded by the Hub and played via MediaSource. No TURN key / card needed.
+- Music player and bot ideas removed (cancelled by the owner).
+- Auto input sensitivity, extra-strong noise cancellation, TeamSpeak click-to-join and channel quality, retuned sounds.
 
 ## Tests (last run, all green)
-ui 70 · desktop-ui 35 · teamspeak 40 · voice 50 · (api 171 / features 96 unchanged)
+ui 66 · voice 55 (includes relay audio/camera/screen) · desktop-ui 35 · teamspeak 40 · api 171 · features 96
 
-## Remaining / known
-- Create a Cloudflare TURN key (Realtime → TURN) and set TURN_KEY_ID / TURN_KEY_API_TOKEN for reliable calls behind strict NATs.
+## Known
+- Relay mode uses more server requests/bandwidth; fine for small groups.
 - Real-exe installer test is sensitive to an existing install on the machine.
-- Discord bots cannot be connected (they live on Discord); the built-in music player replaces a music bot.

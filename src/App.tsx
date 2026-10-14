@@ -17,7 +17,6 @@ import { ChannelIcon, ForumView, threadMenuItems } from './features/Channels';
 import { EventStrip, ImportProgress } from './features/Server';
 import { ActivityLine, resendPresenceExtras } from './features/Account';
 import { SoundboardButton } from './features/Voice';
-import { MusicPlayer } from './features/Music';
 import { ChatPane } from './Chat';
 import { VoiceStage, IncomingCall } from './VoiceUI';
 import { ModalHost, memberMenu, STATUS_LABEL } from './Modals';
@@ -1223,7 +1222,6 @@ function Shell() {
       {route.serverId === '@ts' ? <TsMain /> : route.channelId ? <ChannelView channelId={route.channelId} /> : route.serverId ? <NoChannel /> : <Friends />}
       <ModalHost />
       <ExtraModals />
-      <MusicPlayer />
       <IncomingCall />
       <ImportProgress />
     </div>

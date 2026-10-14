@@ -246,6 +246,25 @@ try {
   failures.push('exception: ' + e.message);
   console.log(e);
 } finally {
+  console.log('• no direct connection: media goes through the server');
+  const relayId = await api(ta, 'POST', `/api/servers/${serverId}/channels`, { name: 'relay-room', type: 2 });
+  const R1 = await open(ta);
+  const R2 = await open(tb);
+  for (const pg of [R1, R2]) await pg.evaluate(() => (window.__forceRelay = true));
+  await R1.evaluate((id) => window.__voice.join(id), relayId.id);
+  await R2.evaluate((id) => window.__voice.join(id), relayId.id);
+  const relayAudio = () => [...window.__voice.peers.values()].some((p) => p.streams.has('relay-audio') && p.streams.get('relay-audio').getAudioTracks().some((t) => t.readyState === 'live'));
+  ok(await until(R2, relayAudio, null, 30000), 'the other person receives audio through the server relay');
+  ok(await until(R1, relayAudio, null, 30000), 'and so do you');
+  ok(await until(R2, () => !!document.querySelector('.voice-user .avatar.speaking, .tile.speaking'), null, 15000), 'speaking indicator works over the relay');
+  await R2.locator('.sidebar .channel', { hasText: 'relay-room' }).click();
+  await R1.locator('.sidebar .channel', { hasText: 'relay-room' }).click();
+  await R1.evaluate(() => window.__voice.setVideo(true));
+  ok(await until(R2, () => [...document.querySelectorAll('.tile video')].some((v) => !v.classList.contains('mirror') && v.videoWidth > 0), null, 30000), 'camera is visible to the other person through the relay');
+  await R1.evaluate(() => window.__voice.setScreen(true));
+  ok(await until(R2, () => [...document.querySelectorAll('.tile video')].filter((v) => !v.classList.contains('mirror') && v.videoWidth > 0).length >= 2, null, 30000), 'screen share is visible through the relay');
+  await R1.evaluate(() => window.__voice.leave());
+  await R2.evaluate(() => window.__voice.leave());
   await browser.close();
 }
 

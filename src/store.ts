@@ -29,7 +29,6 @@ const defaultSettings = {
   serverOrder: [] as string[],
   streamQuality: '720p30',
   sbVolume: 80,
-  musicVolume: 70,
   autoIdle: 10,
   vadThreshold: -55, // dB; the microphone stays silent below this level
   vadAuto: true, // automatic sensitivity
@@ -62,7 +61,6 @@ const initial = () => ({
   jump: null as null | { channelId: string; messageId: string; n: number },
   replyTo: {} as Record<string, any>,
   notes: {} as Record<string, string>,
-  music: {} as Record<string, any>,
   activities: {} as Record<string, any>,
   imports: {} as Record<string, any>,
   sbFlash: {} as Record<string, { emoji: string; until: number }>,
@@ -426,7 +424,9 @@ export function connect() {
   set((s: any) => ({ status: s.status === 'idle' ? 'connecting' : s.status }));
   const sock = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws?token=${get().token}`);
   ws = sock;
+  sock.binaryType = 'arraybuffer';
   sock.onmessage = (e) => {
+    if (e.data instanceof ArrayBuffer) return void voice.onRelayFrame(e.data);
     if (e.data === 'pong' || sock !== ws) return;
     try {
       handle(JSON.parse(e.data));
@@ -447,6 +447,9 @@ export function connect() {
     set((s: any) => ({ status: s.status === 'ready' ? 'reconnecting' : s.status }));
     setTimeout(connect, Math.min(1000 * 2 ** retry++, 15000));
   };
+}
+export function wsSendBinary(buf: ArrayBuffer) {
+  if (ws?.readyState === 1 && ws.bufferedAmount < 2_000_000) ws.send(buf);
 }
 export function wsSend(o: any) {
   if (ws?.readyState === 1) ws.send(JSON.stringify(o));
@@ -561,9 +564,6 @@ function handle(ev: any) {
       patchServer(serverId, () => rest);
       break;
     }
-    case 'MUSIC':
-      set({ music: { ...s.music, [ev.channelId]: { ...ev.state, offset: ev.serverTime - Date.now(), at: Date.now() } } });
-      break;
     case 'NOTE':
       set({ notes: { ...s.notes, [ev.userId]: ev.note } });
       break;

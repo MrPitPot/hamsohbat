@@ -6,7 +6,6 @@ import { t } from './i18n';
 import { Avatar, Modal, colorFor } from './ui';
 import { memberMenu } from './Modals';
 import { SoundboardButton, StageView } from './features/Voice';
-import { MusicButton } from './features/Music';
 import { CH } from '../shared/perms';
 
 function VideoEl({ stream, mirror }: { stream: MediaStream; mirror?: boolean }) {
@@ -100,7 +99,6 @@ export function VoiceControls({ channelId, big = false }: { channelId: string; b
         {v.screen ? <MonitorX size={size} /> : <MonitorUp size={size} />}
       </button>
       <SoundboardButton channelId={channelId} size={size} />
-      <MusicButton channelId={channelId} size={size} />
       <button className="round red" title={t('Disconnect')} onClick={() => voice.leave()}>
         <PhoneOff size={size} />
       </button>

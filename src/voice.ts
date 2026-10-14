@@ -1,6 +1,7 @@
 // WebRTC mesh voice/video. Every participant holds one peer connection to each other participant;
 // the gateway only relays signalling. Glare is handled with the "perfect negotiation" pattern.
-import { get, set, wsSend, toast, canIn, findChannel } from './store';
+import { get, set, wsSend, wsSendBinary, toast, canIn, findChannel } from './store';
+import { Relay } from './relay';
 import { api } from './api';
 import { P } from '../shared/perms';
 import { audioCtx, playSound } from './sfx';
@@ -53,6 +54,30 @@ class Voice {
     return st.vadAuto ? Math.max(-70, Math.min(-25, this.floor + 10)) : st.vadThreshold;
   }
   warnedRelay = false;
+  relayed = new Set<string>(); // peers we get media from through the server
+  relay = new Relay({
+    localStreams: () => ({
+      audio: this.userStream && this.userStream.getAudioTracks().length ? new MediaStream(this.userStream.getAudioTracks()) : undefined,
+      camera: this.userStream && this.userStream.getVideoTracks().length ? new MediaStream(this.userStream.getVideoTracks()) : undefined,
+      screen: this.screenStream || undefined,
+    }),
+    sendBinary: (b) => wsSendBinary(b),
+    signal: (to, data) => wsSend({ op: 'signal', to, data }),
+    onStream: (sid, kind, stream) => this.onRelayStream(sid, kind, stream),
+  });
+  onRelayFrame(buf: ArrayBuffer) {
+    this.relay.onFrame(buf);
+  }
+  private onRelayStream(sid: string, kind: number, stream: MediaStream) {
+    const p = this.peers.get(sid);
+    if (!p) return;
+    if (kind === 0) {
+      p.streams.set('relay-audio', stream);
+      this.attachAudio(p, stream);
+    } else if (kind === 1) p.streams.set('relay-camera', stream);
+    else p.streams.set(get().voiceStates[p.userId]?.screen || 'relay-screen', stream);
+    this.bump();
+  }
   mic: ProcessedMic | null = null; // the microphone after noise cancellation
   bitrate = 64; // kbps, from the channel settings
   forced = { serverMute: false, serverDeaf: false, suppress: false }; // set by moderators / stage
@@ -275,7 +300,6 @@ class Voice {
     this.applyMute();
     const v = get().voice;
     wsSend({ op: 'voice_join', channelId, mute: this.effectiveMute(), deaf: v.deaf });
-    setTimeout(() => wsSend({ op: 'music', cmd: 'get' }), 800);
     this.meterSelf();
     this.startMeters();
   }
@@ -321,7 +345,7 @@ class Voice {
   }
 
   private createPeer(sid: string, userId: string): Peer {
-    const pc = new RTCPeerConnection({ iceServers: this.ice });
+    const pc = new RTCPeerConnection({ iceServers: this.ice, iceTransportPolicy: (window as any).__forceRelay ? 'relay' : 'all' });
     const p: Peer = {
       sid,
       userId,
@@ -375,13 +399,16 @@ class Voice {
         this.tuneScreenSenders(p);
       }
     };
-    // Still not connected after a while: most likely a strict NAT that needs a relay (TURN) server.
+    // Not connected after a few seconds: a strict NAT. Fall back to relaying the media through our own server.
+    const delay = (window as any).__forceRelay ? 500 : 7000;
     setTimeout(() => {
-      if (this.peers.get(sid) === p && !['connected', 'completed'].includes(pc.iceConnectionState) && !this.warnedRelay) {
-        this.warnedRelay = true;
-        toast('Could not connect directly to this person. The server may need a TURN relay (see README).');
-      }
-    }, 20000);
+      if (this.peers.get(sid) !== p || ['connected', 'completed'].includes(pc.iceConnectionState)) return;
+      this.relayed.add(sid);
+      this.relay.request(sid);
+      // Our own media to them goes the same way (they may also be unable to reach us).
+      if (!this.relay.has(sid)) this.relay.startSend(sid);
+      this.bump();
+    }, delay);
     const mic = this.userStream?.getAudioTracks()[0];
     // Without a microphone we still need an audio m-line so that negotiation starts and we can listen.
     if (mic) p.audioSender = pc.addTrack(mic, this.userStream!);
@@ -396,7 +423,11 @@ class Voice {
     if (!this.channelId) return;
     const p = this.peers.get(ev.from) || this.createPeer(ev.from, ev.userId);
     const { pc } = p;
-    const { description, candidate } = ev.data || {};
+    const { description, candidate, relay } = ev.data || {};
+    if (relay === 'request') {
+      if (!this.relay.has(ev.from)) this.relay.startSend(ev.from);
+      return;
+    }
     try {
       if (description) {
         const collision = description.type === 'offer' && (p.makingOffer || pc.signalingState !== 'stable');
@@ -449,6 +480,8 @@ class Voice {
     const p = this.peers.get(sid);
     if (!p) return;
     this.peers.delete(sid);
+    this.relayed.delete(sid);
+    this.relay.closePeer(sid);
     for (const el of p.audios.values()) {
       el.pause();
       el.srcObject = null;
@@ -481,6 +514,8 @@ class Voice {
     this.userStream = this.screenStream = null;
     this.mic?.stop();
     this.mic = null;
+    this.relay.closeAll();
+    this.relayed.clear();
     this.meterTrack?.stop();
     this.meterTrack = null;
     this.level = -100;
@@ -553,6 +588,7 @@ class Voice {
     this.patch({ video: on });
     sfx(on ? 'streamStart' : 'streamStop');
     this.sendState();
+    this.relay.refresh();
     this.bump();
   }
 
@@ -592,6 +628,7 @@ class Voice {
     this.patch({ screen: on });
     sfx(on ? 'streamStart' : 'streamStop');
     this.sendState();
+    this.relay.refresh();
     this.bump();
   }
 
@@ -614,6 +651,7 @@ class Voice {
       this.patch({ noMic: false });
       this.applyMute();
       this.sendState();
+      this.relay.refresh();
       this.meterSelf();
     } catch {
       toast('Microphone is unavailable. You joined in listen-only mode.');
@@ -635,6 +673,7 @@ class Voice {
   connectionState(userId: string): string {
     const vs = get().voiceStates[userId];
     const p = vs && this.peers.get(vs.sid);
+    if (p && this.relayed.has(p.sid) && p.streams.has('relay-audio')) return 'connected';
     return p ? p.pc.iceConnectionState : 'new';
   }
 
