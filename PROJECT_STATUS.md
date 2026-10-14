@@ -16,5 +16,5 @@ api 171 · features 96 · ui 65 · voice 50 · teamspeak 40 · desktop-ui 34 · 
 `src/noise.ts`, `src/TeamSpeak.tsx`, `src/TitleBar.tsx`, `src/voice.ts`, `desktop/app.cpp`, `desktop/teamspeak/src/{main,audio}.rs`, tests, `scripts/{release,setup-desktop,check-i18n,merge-fa}.mjs`
 
 ## Remaining
-- Deploy 1.4.0 to Cloudflare (`npx wrangler deploy` after `node scripts/release.mjs`).
-- Publish repository to GitHub.
+- (done) Deployed 1.4.0 to Cloudflare.
+- (done) Published: https://github.com/MrPitPot/hamsohbat
