@@ -70,6 +70,7 @@ async function open(token) {
   }, token);
   const page = await ctx.newPage();
   page.on('pageerror', (e) => console.log('  [page error]', e.message));
+  page.on('console', (m) => /Content Security Policy|Refused to/i.test(m.text()) && console.log('  [CSP VIOLATION]', m.text()));
   await page.goto(BASE + '/channels/' + serverId);
   await page.waitForSelector('.channel');
   return page;

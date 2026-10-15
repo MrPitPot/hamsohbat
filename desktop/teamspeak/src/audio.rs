@@ -154,25 +154,39 @@ fn open_capture(device: &cpal::Device, shared: Arc<Shared>, packets: mpsc::Sende
 	let mut was_sending = false;
 	let mut out = [0u8; 1275];
 	let mut denoise = None;
+	// The audio callback only hands samples over; noise removal and encoding run on their own thread, so a slow
+	// frame can no longer make the sound card overrun (that was the "buffer underrun or overrun" error).
+	let (tx, rx) = std::sync::mpsc::sync_channel::<Vec<f32>>(64);
+	std::thread::spawn(move || {
+		while let Ok(data) = rx.recv() {
+			// Downmix to mono and resample to 48 kHz with linear interpolation.
+			let mono = data.chunks(channels).map(|c| c.iter().sum::<f32>() / channels as f32);
+			for s in mono {
+				while pos < 1.0 {
+					frame.push(last + (s - last) * pos as f32);
+					pos += step;
+					if frame.len() == FRAME {
+						process(&mut frame, &shared, &mut encoder, &packets, &mut open_until, &mut was_sending, &mut out, &mut denoise);
+					}
+				}
+				pos -= 1.0;
+				last = s;
+			}
+		}
+	});
 	let stream = device
 		.build_input_stream(
 			cfg.config(),
 			move |data: &[f32], _| {
-				// Downmix to mono and resample to 48 kHz with linear interpolation.
-				let mono = data.chunks(channels).map(|c| c.iter().sum::<f32>() / channels as f32);
-				for s in mono {
-					while pos < 1.0 {
-						frame.push(last + (s - last) * pos as f32);
-						pos += step;
-						if frame.len() == FRAME {
-							process(&mut frame, &shared, &mut encoder, &packets, &mut open_until, &mut was_sending, &mut out, &mut denoise);
-						}
-					}
-					pos -= 1.0;
-					last = s;
+				let _ = tx.try_send(data.to_vec());
+			},
+			|e| {
+				// Underruns/overruns are momentary glitches the stream recovers from: not worth an error message.
+				let m = e.to_string();
+				if !m.to_lowercase().contains("underrun") {
+					crate::emit(serde_json::json!({"type": "error", "message": format!("Microphone: {m}")}));
 				}
 			},
-			|e| crate::emit(serde_json::json!({"type": "error", "message": format!("Microphone: {e}")})),
 			None,
 		)
 		.map_err(|e| format_err!("{e}"))?;

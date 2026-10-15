@@ -104,6 +104,7 @@ async function open(token, lang = 'en') {
   );
   const page = await ctx.newPage();
   page.on('pageerror', (e) => (pageErrors.push(e.message), console.log('  [page error]', e.message)));
+  page.on('console', (m) => /Content Security Policy|Refused to/i.test(m.text()) && (pageErrors.push(m.text()), console.log('  [CSP]', m.text())));
   await page.goto(BASE + '/channels/' + serverId);
   await page.waitForSelector('.channel');
   return page;

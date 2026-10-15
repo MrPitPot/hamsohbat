@@ -513,7 +513,9 @@ function TsChannelNode({ c, depth }: { c: TsChannel; depth: number }) {
         <div
           className={'channel' + (mine?.channel === c.id ? ' active' : '') + (selected ? ' selected' : '') + (full ? ' full' : '')}
           style={{ paddingInlineStart: 8 + depth * 12 }}
-          onClick={() => {
+          onMouseDown={(e) => {
+            // On mouse down, not click: the list re-renders constantly on a busy server and a click could be lost.
+            if (e.button !== 0) return;
             setTs({ selected: { kind: 'channel', id: c.id } });
             joinChannel(c);
           }}

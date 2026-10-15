@@ -18,3 +18,8 @@ ui 66 · voice 55 (includes relay audio/camera/screen) · desktop-ui 35 · teams
 - Repo/history scanned: no secrets, tokens or keys tracked (.dev.vars, server-url.txt, test users are ignored).
 - Added: login/register throttling (429), 90-day session expiry, redirect re-check for link previews (SSRF), Discord-CDN-only import fetch, `public/_headers` (nosniff, X-Frame-Options, Referrer-Policy, Permissions-Policy).
 - Known/open: no strict CSP yet (needs testing with WASM/AudioWorklet); uploaded files are readable by anyone with the unguessable URL; public OpenRelay TURN credentials are not secret.
+
+## 1.6.2 (2026-10-15)
+- CSP via <meta> in index.html (tested: ui 66, voice 55 with CSP-violation listeners).
+- TeamSpeak: mic processing moved off the audio callback + underrun not shown as error; channel join on mouse-down; ping only from ping/pong (patched tsproto resend.rs, applied by scripts/setup-desktop.mjs).
+- Planned/experimental: Discord via user-supplied proxy (needs proxy type/config from the user; user account gateway = Discord ToS risk).

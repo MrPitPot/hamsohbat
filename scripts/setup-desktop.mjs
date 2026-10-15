@@ -31,4 +31,22 @@ if (!fs.existsSync(path.join(ts, 'tsclientlib'))) {
 }
 run(`git checkout ${TSCLIENTLIB_COMMIT}`, ts);
 run('git submodule update --init', ts);
+// Displayed ping must come from ping/pong only (command acks include server processing time and read ~70 ms high).
+{
+  const f = path.join(ts, 'tsproto', 'src', 'resend.rs');
+  let s = fs.readFileSync(f, 'utf8');
+  if (!s.includes('is_ping: bool')) {
+    s = s
+      .replace('con.resender.update_srtt(now - rec.sent);', 'con.resender.update_srtt(now - rec.sent, false);')
+      .replace('con.resender.update_srtt(now - ping.sent);', 'con.resender.update_srtt(now - ping.sent, true);')
+      .replace('fn update_srtt(&mut self, rtt: Duration) {', 'fn update_srtt(&mut self, rtt: Duration, is_ping: bool) {')
+      .replace('		// Rtt (non-smoothed)
+', '		if !is_ping && self.stats.rtt != Duration::ZERO {
+			return;
+		}
+		// Rtt (non-smoothed)
+');
+    fs.writeFileSync(f, s);
+  }
+}
 console.log('Desktop build dependencies are ready.');
