@@ -684,7 +684,23 @@ export function DiscordImportModal() {
                     throw new Error('That JSON is not valid');
                   }
                 }
-                const r = await api('POST', '/api/servers/import/template', template ? { template } : { code });
+                let r: any;
+                try {
+                  r = await api('POST', '/api/servers/import/template', template ? { template } : { code });
+                } catch (e: any) {
+                  // Our server cannot reach Discord (it blocks some hosting networks): fetch the template from this
+                  // computer instead (through the Discord proxy when one is running) and send it over.
+                  const id = code.trim().match(/([A-Za-z0-9]{8,})\/?$/)?.[1];
+                  if (template || !id || !/discord/i.test(String(e?.message))) throw e;
+                  let fetched: any;
+                  try {
+                    fetched = await (await fetch('https://discord.com/api/v10/guilds/templates/' + id)).json();
+                  } catch {
+                    throw e;
+                  }
+                  if (!fetched?.serialized_source_guild) throw e;
+                  r = await api('POST', '/api/servers/import/template', { template: fetched });
+                }
                 await goTo(r.id);
               })
             }

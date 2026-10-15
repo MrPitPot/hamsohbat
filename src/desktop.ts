@@ -25,7 +25,13 @@ export const setDesktopOption = (key: 'autostart' | 'closeToTray', value: boolea
   sendNative({ type: 'setOption', key, value });
   set((s: any) => ({ desktop: { ...s.desktop, [key]: value } }));
 };
-export const setServerUrl = (url: string) => sendNative({ type: 'setServer', url });
+export const setServerUrl = (url: string) => {
+  // Only the site's address is stored: an invite link or other path pasted into the field must not break the app.
+  try {
+    const u = new URL(/^https?:\/\//i.test(url.trim()) ? url.trim() : 'https://' + url.trim());
+    if (/^https?:$/.test(u.protocol) && u.hostname) sendNative({ type: 'setServer', url: u.origin });
+  } catch {}
+};
 
 /** Tells the desktop app which key is push-to-talk, so it works while the window is in the background. */
 function syncPtt() {

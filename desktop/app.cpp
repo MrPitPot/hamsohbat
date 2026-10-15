@@ -1175,7 +1175,11 @@ static void SetupWebView() {
 static void InitWebView() {
   std::wstring data = DataDir() + L"\\WebView2";
   auto opts = Microsoft::WRL::Make<CoreWebView2EnvironmentOptions>();
-  opts->put_AdditionalBrowserArguments(L"--autoplay-policy=no-user-gesture-required");
+  // Requests to Discord (import from a template, etc.) use the local VPN proxy while it runs; everything else goes direct.
+  // PAC (base64): FindProxyForURL(u,h){ if (h=="discord.com"||dnsDomainIs(h,".discord.com")||dnsDomainIs(h,".discordapp.com")||dnsDomainIs(h,".discord.gg")||dnsDomainIs(h,".discordapp.net")) return "PROXY 127.0.0.1:17890; DIRECT"; return "DIRECT"; }
+  opts->put_AdditionalBrowserArguments(
+      L"--autoplay-policy=no-user-gesture-required --proxy-pac-url=data:application/x-ns-proxy-autoconfig;base64,"
+      L"ZnVuY3Rpb24gRmluZFByb3h5Rm9yVVJMKHUsaCl7aWYoaD09ImRpc2NvcmQuY29tInx8ZG5zRG9tYWluSXMoaCwiLmRpc2NvcmQuY29tIil8fGRuc0RvbWFpbklzKGgsIi5kaXNjb3JkYXBwLmNvbSIpfHxkbnNEb21haW5JcyhoLCIuZGlzY29yZC5nZyIpfHxkbnNEb21haW5JcyhoLCIuZGlzY29yZGFwcC5uZXQiKSl7cmV0dXJuIlBST1hZIDEyNy4wLjAuMToxNzg5MDsgRElSRUNUIjt9cmV0dXJuIkRJUkVDVCI7fQ==");
   HRESULT hr = CreateCoreWebView2EnvironmentWithOptions(
       nullptr, data.c_str(), opts.Get(),
       Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>([](HRESULT hr, ICoreWebView2Environment* env) -> HRESULT {
@@ -1402,8 +1406,8 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmdLine, int show) {
   g_server = CfgGet(L"Server", DEFAULT_SERVER_W);
   size_t sp = args.find(L"--server=");
   if (sp != std::wstring::npos) {
+    // For this run only (tests, development); it must never overwrite the saved server address.
     g_server = args.substr(sp + 9, args.find(L' ', sp) - sp - 9);
-    CfgSet(L"Server", g_server);
   }
 
   g_iconBig = (HICON)LoadImageW(inst, MAKEINTRESOURCEW(1), IMAGE_ICON, GetSystemMetrics(SM_CXICON), GetSystemMetrics(SM_CYICON), 0);
