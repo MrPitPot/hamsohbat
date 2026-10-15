@@ -1,4 +1,12 @@
-import { fa } from './fa';
+// The Persian dictionary is a separate chunk so English users never download it; loadLang() fetches it.
+let fa: Record<string, string> = {};
+let faLoad: Promise<void> | null = null;
+export function loadLang(l: string): Promise<void> {
+  if (l === 'en') return Promise.resolve();
+  return (faLoad ||= import('./fa').then((m) => {
+    fa = m.fa;
+  }));
+}
 
 let current = 'fa';
 export const lang = () => current;

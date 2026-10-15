@@ -2,7 +2,7 @@
 // threads, polls, custom emoji, stickers, rich text, forwarding, webhooks, events, moderation (time-outs, server
 // mute), stage channels, the soundboard, the quick switcher, the inbox, folders, two-factor auth and Persian.
 // Run `npm run dev` first, then `node test/ui.test.mjs`. Uses the locally installed Chrome (or Edge).
-import { chromium } from 'playwright-core';
+import { launchBrowser } from './browser.mjs';
 import { createHmac } from 'node:crypto';
 import { deflateSync } from 'node:zlib';
 
@@ -81,16 +81,10 @@ const news = (await api(ta, 'POST', `/api/servers/${serverId}/channels`, { name:
 const stage = (await api(ta, 'POST', `/api/servers/${serverId}/channels`, { name: 'Town Hall', type: 13 })).id;
 const secret = (await api(ta, 'POST', `/api/servers/${serverId}/channels`, { name: 'secret', type: 0, private: true })).id;
 
-let browser;
 const args = ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream', '--autoplay-policy=no-user-gesture-required'];
-for (const channel of ['chrome', 'msedge']) {
-  try {
-    browser = await chromium.launch({ channel, headless: true, args });
-    break;
-  } catch {}
-}
+const browser = await launchBrowser(args);
 if (!browser) {
-  console.log('No Edge or Chrome found; skipping.');
+  console.log('No Chrome, Edge or Chromium found; skipping.');
   process.exit(0);
 }
 async function open(token, lang = 'en') {

@@ -3,7 +3,7 @@
 // driven end to end by the real hs-teamspeak bridge against a local TeamSpeak 3 server.
 // Run `npm run dev` and start a TeamSpeak 3 server on this machine, then:
 //   node test/desktop-ui.test.mjs [server url]
-import { chromium } from 'playwright-core';
+import { launchBrowser } from './browser.mjs';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import fs from 'node:fs';
@@ -28,15 +28,9 @@ async function api(token, method, p, body) {
 const token = (await api(null, 'POST', '/api/auth/register', { username: 'desk_ui_' + run, password: 'desk-ui-pw', displayName: 'Desk' })).token;
 await api(token, 'POST', '/api/servers', { name: 'Desk UI ' + run });
 
-let browser;
-for (const channel of ['chrome', 'msedge']) {
-  try {
-    browser = await chromium.launch({ channel, headless: true, args: ['--autoplay-policy=no-user-gesture-required', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'] });
-    break;
-  } catch {}
-}
+const browser = await launchBrowser(['--autoplay-policy=no-user-gesture-required', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream']);
 if (!browser) {
-  console.log('No Edge or Chrome found; skipping.');
+  console.log('No Chrome, Edge or Chromium found; skipping.');
   process.exit(0);
 }
 const ctx = await browser.newContext({ viewport: { width: 1360, height: 860 }, permissions: ['microphone'] });
