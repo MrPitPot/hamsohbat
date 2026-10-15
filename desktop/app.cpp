@@ -430,7 +430,6 @@ static void SetPtt(const std::wstring& codeName, bool enabled) {
 // config (subscription link, local ports) and controls it over its REST API on 127.0.0.1. Discord opens in its own
 // window whose WebView2 uses that local proxy only; the rest of Hamsohbat never goes through it.
 static HANDLE g_proxyProc = nullptr;
-static HWND g_dcWnd = nullptr;
 static ICoreWebView2Controller* g_dcCtrl = nullptr;
 
 static void ProxyStop() {
@@ -485,62 +484,48 @@ static void ProxyStart(const std::wstring& yaml) {
     PostJson(L"{\"type\":\"proxy\",\"state\":\"error\",\"message\":\"cannot start hs-proxy.exe\"}");
 }
 
-static LRESULT CALLBACK DiscordProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
-  switch (msg) {
-    case WM_SIZE:
-      if (g_dcCtrl) {
-        RECT r;
-        GetClientRect(h, &r);
-        g_dcCtrl->put_Bounds(r);
-      }
-      return 0;
-    case WM_DESTROY:
-      if (g_dcCtrl) {
-        g_dcCtrl->Close();
-        g_dcCtrl->Release();
-        g_dcCtrl = nullptr;
-      }
-      g_dcWnd = nullptr;
-      return 0;
-  }
-  return DefWindowProcW(h, msg, wp, lp);
+// Discord lives inside the main window: a second WebView2 (own profile, proxied) is placed over the area the page
+// reserves for it and hidden whenever that page is not shown.
+static bool g_dcCreating = false;
+static RECT g_dcRect = {0, 0, 0, 0};
+static bool g_dcVisible = false;
+
+static void DiscordApplyBounds() {
+  if (!g_dcCtrl) return;
+  g_dcCtrl->put_IsVisible(g_dcVisible && g_dcRect.right > g_dcRect.left && g_dcRect.bottom > g_dcRect.top);
+  RECT r = g_dcRect;  // the page starts TopGrip() below the window's top edge
+  r.top += TopGrip();
+  r.bottom += TopGrip();
+  g_dcCtrl->put_Bounds(r);
 }
 
-static void DiscordOpen(int port) {
-  if (g_dcWnd) {
-    ShowWindow(g_dcWnd, SW_SHOW);
-    SetForegroundWindow(g_dcWnd);
+/** x/y/w/h are in device pixels relative to the window's client area. */
+static void DiscordShow(int port, int x, int y, int w, int h, bool visible) {
+  g_dcRect = {x, y, x + w, y + h};
+  g_dcVisible = visible;
+  if (g_dcCtrl) {
+    DiscordApplyBounds();
     return;
   }
-  static bool reg = false;
-  if (!reg) {
-    WNDCLASSW wc = {};
-    wc.lpfnWndProc = DiscordProc;
-    wc.hInstance = g_inst;
-    wc.hIcon = LoadIconW(g_inst, MAKEINTRESOURCEW(1));
-    wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
-    wc.lpszClassName = L"HamsohbatDiscord";
-    RegisterClassW(&wc);
-    reg = true;
-  }
-  g_dcWnd = CreateWindowExW(0, L"HamsohbatDiscord", L"Discord (via proxy)", WS_OVERLAPPEDWINDOW | WS_VISIBLE, CW_USEDEFAULT, CW_USEDEFAULT, 1180, 760,
-                            nullptr, nullptr, g_inst, nullptr);
+  if (!visible || g_dcCreating) return;
+  g_dcCreating = true;
   auto opts = Microsoft::WRL::Make<CoreWebView2EnvironmentOptions>();
   std::wstring args = L"--proxy-server=http://127.0.0.1:" + std::to_wstring(port) + L" --autoplay-policy=no-user-gesture-required";
   opts->put_AdditionalBrowserArguments(args.c_str());
   std::wstring data = DataDir() + L"\\DiscordWebView2";
-  HWND win = g_dcWnd;
   CreateCoreWebView2EnvironmentWithOptions(
       nullptr, data.c_str(), opts.Get(),
-      Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>([win](HRESULT hr, ICoreWebView2Environment* env) -> HRESULT {
-        if (FAILED(hr) || !env || !IsWindow(win)) return S_OK;
-        env->CreateCoreWebView2Controller(win, Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>([win](HRESULT hr, ICoreWebView2Controller* c) -> HRESULT {
-                                                if (FAILED(hr) || !c || !IsWindow(win)) return S_OK;
+      Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>([](HRESULT hr, ICoreWebView2Environment* env) -> HRESULT {
+        if (FAILED(hr) || !env) {
+          g_dcCreating = false;
+          return S_OK;
+        }
+        env->CreateCoreWebView2Controller(g_hwnd, Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>([](HRESULT hr, ICoreWebView2Controller* c) -> HRESULT {
+                                                g_dcCreating = false;
+                                                if (FAILED(hr) || !c) return S_OK;
                                                 g_dcCtrl = c;
                                                 g_dcCtrl->AddRef();
-                                                RECT r;
-                                                GetClientRect(win, &r);
-                                                c->put_Bounds(r);
+                                                DiscordApplyBounds();
                                                 ICoreWebView2* wv = nullptr;
                                                 c->get_CoreWebView2(&wv);
                                                 if (wv) {
@@ -551,6 +536,16 @@ static void DiscordOpen(int port) {
                                               }).Get());
         return S_OK;
       }).Get());
+}
+
+static void DiscordReload() {
+  if (!g_dcCtrl) return;
+  ICoreWebView2* wv = nullptr;
+  g_dcCtrl->get_CoreWebView2(&wv);
+  if (wv) {
+    wv->Navigate(L"https://discord.com/app");
+    wv->Release();
+  }
 }
 
 // ------------------------------------------------------------------ TeamSpeak bridge
@@ -1020,8 +1015,13 @@ static void HandleWebMessage(const std::wstring& json) {
     if (cmd == L"start") ProxyStart(JsonGet(json, L"yaml"));
     else if (cmd == L"stop") ProxyStop();
   } else if (type == L"discord") {
+    std::wstring cmd = JsonGet(json, L"cmd");
     int port = _wtoi(JsonGet(json, L"port").c_str());
-    if (port > 0 && port < 65536) DiscordOpen(port);
+    if (cmd == L"reload") DiscordReload();
+    else if (cmd == L"hide") DiscordShow(port > 0 ? port : 17890, 0, 0, 0, 0, false);
+    else if (port > 0 && port < 65536)
+      DiscordShow(port, _wtoi(JsonGet(json, L"x").c_str()), _wtoi(JsonGet(json, L"y").c_str()), _wtoi(JsonGet(json, L"w").c_str()),
+                  _wtoi(JsonGet(json, L"h").c_str()), cmd == L"show");
   } else if (type == L"tray") {
     std::wstring st = JsonGet(json, L"state");
     int level = _wtoi(JsonGet(json, L"level").c_str());

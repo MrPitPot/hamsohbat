@@ -1,4 +1,4 @@
-﻿// Discord-through-proxy screen, end to end with the real Mihomo core (hs-proxy.exe / desktop/.deps/mihomo).
+// Discord-through-proxy screen, end to end with the real Mihomo core (hs-proxy.exe / desktop/.deps/mihomo).
 // A local HTTP server plays the VPN panel's subscription link; the simulated app shell starts the core like the
 // desktop app does, and the page drives it. Run `npx wrangler dev --port 8787` first, then:
 //   node test/proxy.test.mjs [server url]
@@ -146,8 +146,11 @@ try {
   });
   ok(viaProxy === 204, 'a request through the local proxy port reaches the internet');
   await page.click('button:has-text("Open Discord")');
-  ok(await page.evaluate(() => window.__native.some((m) => m.type === 'discord' && m.cmd === 'open' && m.port === 17890)), '"Open Discord" asks the app to open its window on the proxy port');
+  ok(await page.evaluate(() => window.__native.some((m) => m.type === 'discord' && m.cmd === 'show' && m.port === 17890 && m.w > 300 && m.h > 300)), 'Discord is placed inside the window on the proxy port');
 
+  ok(await page.locator('.dc-view').count() === 1 && (await page.evaluate(() => document.querySelector('.dc-view').getBoundingClientRect().width > 300)), 'the Discord area fills the main part of the window');
+  await page.click('button:has-text("Servers and settings")');
+  ok(await page.evaluate(() => window.__native.at(-1).cmd === 'hide'), 'leaving the Discord view hides it again');
   console.log('• stop');
   await page.click('button:has-text("Stop proxy")');
   await sleep(1500);

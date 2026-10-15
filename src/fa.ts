@@ -1028,6 +1028,8 @@ export const fa: Record<string, string> = {
   "Pick the fastest": "انتخاب سریع‌ترین",
   "Open Discord": "باز کردن دیسکورد",
   "Timeout": "بدون پاسخ",
+  "Reload": "بارگذاری مجدد",
+  "Servers and settings": "سرورها و تنظیمات",
   "Too many attempts. Try again in a few minutes.": "تلاش‌های زیاد. چند دقیقهٔ دیگر دوباره امتحان کنید.",
   "Test": "تست",
 };

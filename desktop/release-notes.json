@@ -1,1 +1,1 @@
-{"fa":"• رفع مشکل ذخیرهٔ آدرس سرور (حساب و سرورها دست‌نخورده‌اند)\n• ایمپورت قالب دیسکورد از کامپیوتر خودتان و با پروکسی هم انجام می‌شود","en":"• Fixed the saved server address getting overwritten (your account and servers are untouched)\n• Discord template import can now fetch from this computer, through the proxy"}
+{"fa":"• دیسکورد حالا داخل خود همصحبت و بدون پنجرهٔ جدا باز می‌شود (مستقیم از اینترنت شما، از طریق کانفیگ وی‌پی‌ان)","en":"• Discord now opens inside Hamsohbat, no extra window (straight from your connection, through your VPN config)"}

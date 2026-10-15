@@ -314,3 +314,9 @@ fieldset.automod:disabled { opacity: 0.5; }
 .desktop-app img { -webkit-user-drag: none; }
 .desktop-app a { -webkit-user-drag: none; }
 
+
+/* Discord inside the window */
+.dc-open{display:flex;flex-direction:column;min-width:0}
+.dc-bar{display:flex;align-items:center;gap:10px;padding:8px 14px;border-bottom:1px solid var(--border,#0003);flex:0 0 auto}
+.dc-bar .spacer{flex:1}
+.dc-view{flex:1;min-height:0}

@@ -56,8 +56,9 @@ try {
   ok(fs.existsSync(path.join(process.env.LOCALAPPDATA, 'Hamsohbat', 'proxy', 'config.yaml')), 'the config was written to the app data folder');
 
   console.log('• Discord window');
-  await page.evaluate(() => window.chrome.webview.postMessage({ type: 'discord', cmd: 'open', port: 17890 }));
-  ok(await until(() => ps("(Get-Process | Where-Object { $_.MainWindowTitle -eq 'Discord (via proxy)' } | Measure-Object).Count") === '1'), 'a separate "Discord (via proxy)" window opens');
+  await page.evaluate(() => window.chrome.webview.postMessage({ type: 'discord', cmd: 'show', port: 17890, x: 300, y: 100, w: 900, h: 600 }));
+  ok(await until(() => ps("(Get-CimInstance Win32_Process -Filter \"Name='msedgewebview2.exe'\" | Where-Object { $_.CommandLine -match 'DiscordWebView2' } | Measure-Object).Count") !== '0', 25000), 'the Discord view starts inside the app');
+  ok(ps("(Get-Process | Where-Object { $_.MainWindowTitle -like 'Discord*' } | Measure-Object).Count") === '0', 'no separate Discord window is opened');
   ok(await until(() => ps("(Get-CimInstance Win32_Process -Filter \"Name='msedgewebview2.exe'\" | Where-Object { $_.CommandLine -match 'proxy-server=http://127.0.0.1:17890' } | Measure-Object).Count") !== '0', 20000), 'its browser runs with the local proxy only');
   ok(await until(() => ps("(Get-CimInstance Win32_Process -Filter \"Name='msedgewebview2.exe'\" | Where-Object { $_.CommandLine -match 'DiscordWebView2' } | Measure-Object).Count") !== '0', 20000), 'it uses its own profile folder');
   ok(ps("(Get-CimInstance Win32_Process -Filter \"Name='msedgewebview2.exe'\" | Where-Object { $_.CommandLine -match 'proxy-server' -and $_.CommandLine -notmatch 'DiscordWebView2' } | Measure-Object).Count") === '0', 'the main app window is not routed through the proxy');

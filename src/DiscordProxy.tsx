@@ -204,12 +204,64 @@ export function DcMain() {
     return () => clearInterval(poll.current);
   }, []);
 
+  const [open, setOpen] = useState(false);
+  const holder = useRef<HTMLDivElement>(null);
+  const modal = useStore((s: any) => s.modal);
+  const showing = open && running && !modal;
+
+  // Discord is a second browser view the app places over this box (it cannot be drawn by the page itself).
+  useEffect(() => {
+    if (!showing) {
+      sendNative({ type: 'discord', cmd: 'hide', port: MIXED_PORT });
+      return;
+    }
+    let last = '';
+    const place = () => {
+      const el = holder.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      const k = window.devicePixelRatio || 1;
+      const m = { type: 'discord', cmd: 'show', port: MIXED_PORT, x: Math.round(r.left * k), y: Math.round(r.top * k), w: Math.round(r.width * k), h: Math.round(r.height * k) };
+      const key = [m.x, m.y, m.w, m.h].join();
+      if (key !== last) {
+        last = key;
+        sendNative(m);
+      }
+    };
+    place();
+    const id = setInterval(place, 400);
+    window.addEventListener('resize', place);
+    return () => {
+      clearInterval(id);
+      window.removeEventListener('resize', place);
+      sendNative({ type: 'discord', cmd: 'hide', port: MIXED_PORT });
+    };
+  }, [showing]);
+
   if (!isDesktop)
     return (
       <div className="main-col">
         <div className="empty">
           <p>{t('Discord through a proxy is available in the Hamsohbat Windows app.')}</p>
         </div>
+      </div>
+    );
+
+  if (open && running)
+    return (
+      <div className="main-col dc-main dc-open">
+        <div className="dc-bar">
+          <strong>Discord</strong>
+          <small dir="ltr">{now}</small>
+          <span className="spacer" />
+          <button className="btn" onClick={() => sendNative({ type: 'discord', cmd: 'reload', port: MIXED_PORT })}>
+            <RefreshCw size={14} /> {t('Reload')}
+          </button>
+          <button className="btn" onClick={() => setOpen(false)}>
+            {t('Servers and settings')}
+          </button>
+        </div>
+        <div className="dc-view" ref={holder} />
       </div>
     );
 
@@ -256,7 +308,7 @@ export function DcMain() {
               </button>
             </>
           )}
-          <button className="btn primary" disabled={!running} onClick={() => sendNative({ type: 'discord', cmd: 'open', port: MIXED_PORT })}>
+          <button className="btn primary" disabled={!running} onClick={() => setOpen(true)}>
             <ExternalLink size={14} /> {t('Open Discord')}
           </button>
         </div>
