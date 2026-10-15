@@ -2,7 +2,7 @@
 // Audio comes from the browser's fake microphone. Camera and screen capture are replaced by an animated
 // canvas, because the browser's fake camera proved unreliable in headless mode.
 // Run `npm run dev` first, then `npm run test:voice`. Uses the locally installed Chrome (or Edge).
-import { chromium } from 'playwright-core';
+import { launchBrowser } from './browser.mjs';
 
 const BASE = process.argv[2] || 'http://127.0.0.1:8787';
 const run = Date.now().toString(36);
@@ -32,16 +32,10 @@ const { code } = await api(ta, 'POST', `/api/servers/${serverId}/invites`, {});
 await api(tb, 'POST', '/api/invites/' + code);
 await api(tc, 'POST', '/api/invites/' + code);
 
-let browser;
 const args = ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream', '--auto-select-desktop-capture-source=Entire screen', '--autoplay-policy=no-user-gesture-required'];
-for (const channel of ['chrome', 'msedge']) {
-  try {
-    browser = await chromium.launch({ channel, headless: true, args });
-    break;
-  } catch {}
-}
+const browser = await launchBrowser(args);
 if (!browser) {
-  console.log('No Edge or Chrome found; skipping.');
+  console.log('No Chrome, Edge or Chromium found; skipping.');
   process.exit(0);
 }
 
@@ -221,7 +215,13 @@ try {
   await A.locator('.main-head button[title="Start Voice Call"], .main-head button[title="Join Call"]').first().click();
   await A.waitForTimeout(2500);
   ok(await A.evaluate(() => window.__voice.userStream.getAudioTracks()[0].enabled === false), 'voice gate stays closed below the sensitivity threshold');
-  ok(await A.evaluate(() => window.__voice.level > -100 && window.__voice.level < 0), 'microphone level is measured while gated');
+  // The fake microphone beeps with silence in between, so watch the level for a moment instead of sampling it once.
+  ok(await A.evaluate(() => new Promise((done) => {
+    const t = setInterval(() => {
+      if (window.__voice.level > -100 && window.__voice.level < 0) done(true);
+    }, 20);
+    setTimeout(() => (clearInterval(t), done(false)), 3000);
+  })), 'microphone level is measured while gated');
   await A.locator('.dm-call button[title="Disconnect"]').click();
 
   console.log('• voice messages, link previews, markdown');

@@ -21,9 +21,15 @@ import { ChatPane } from './Chat';
 import { VoiceStage, IncomingCall } from './VoiceUI';
 import { ModalHost, memberMenu, STATUS_LABEL } from './Modals';
 import { UpdateBanner } from './AppSettings';
-import { TsSidebar, TsMain, TsRailItem } from './TeamSpeak';
 import { isDesktop, setServerUrl } from './desktop';
 import { TitleBar } from './TitleBar';
+
+// The TeamSpeak client only exists in the Windows app, so its code is a separate chunk that the app loads at startup.
+const loadTs = () => import('./TeamSpeak');
+if (isDesktop) loadTs();
+const TsSidebar = React.lazy(() => loadTs().then((m) => ({ default: m.TsSidebar })));
+const TsMain = React.lazy(() => loadTs().then((m) => ({ default: m.TsMain })));
+const TsRailItem = React.lazy(() => loadTs().then((m) => ({ default: m.TsRailItem })));
 
 // ---------------------------------------------------------------- auth
 function Auth() {
@@ -340,7 +346,11 @@ function ServerRail() {
           </div>
         );
       })}
-      <TsRailItem />
+      {isDesktop && (
+        <React.Suspense fallback={null}>
+          <TsRailItem />
+        </React.Suspense>
+      )}
       <RailItem title={t('Add a Server')} onClick={() => openModal('createServer')} className="add">
         <Plus size={24} />
       </RailItem>
@@ -1214,12 +1224,20 @@ function Shell() {
       <div className="nav-cols">
         <ServerRail />
         <div className="sidebar">
-          {route.serverId === '@ts' ? <TsSidebar /> : route.serverId ? <ServerSidebar serverId={route.serverId} /> : <HomeSidebar />}
+          {route.serverId === '@ts' ? (
+            <React.Suspense fallback={null}>
+              <TsSidebar />
+            </React.Suspense>
+          ) : route.serverId ? <ServerSidebar serverId={route.serverId} /> : <HomeSidebar />}
           <UserPanel />
         </div>
       </div>
       <div className="nav-scrim" onClick={() => set({ mobileNav: false })} />
-      {route.serverId === '@ts' ? <TsMain /> : route.channelId ? <ChannelView channelId={route.channelId} /> : route.serverId ? <NoChannel /> : <Friends />}
+      {route.serverId === '@ts' ? (
+        <React.Suspense fallback={null}>
+          <TsMain />
+        </React.Suspense>
+      ) : route.channelId ? <ChannelView channelId={route.channelId} /> : route.serverId ? <NoChannel /> : <Friends />}
       <ModalHost />
       <ExtraModals />
       <IncomingCall />

@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { api, setUnauthorizedHandler } from './api';
 import { P, ALL_PERMS, CH, REL, computeChannelPerms, TIMEOUT_REMOVES } from '../shared/perms';
-import { setLang, t } from './i18n';
+import { loadLang, setLang, t } from './i18n';
 import { voice, sfx } from './voice';
 import { setSoundVolume, playBuiltin, soundCtx, BUILTIN_EMOJI } from './sfx';
 import { appearanceDefaults, applyAppearance } from './appearance';
@@ -114,6 +114,16 @@ export const closeModal = () => {
 };
 
 export function updateSettings(patch: any) {
+  // Switching to Persian waits for its dictionary so the re-render shows translated text.
+  if (patch.lang && patch.lang !== get().settings.lang) {
+    loadLang(patch.lang)
+      .catch(() => {})
+      .then(() => applySettings(patch));
+    return;
+  }
+  applySettings(patch);
+}
+function applySettings(patch: any) {
   const settings = { ...get().settings, ...patch };
   localStorage.setItem('settings', JSON.stringify(settings));
   setLang(settings.lang);

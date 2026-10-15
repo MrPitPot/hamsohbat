@@ -2,7 +2,6 @@
 // the mentions inbox, the quick switcher (Ctrl+K), user notes and auto-idle.
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AtSign, Gamepad2, Hash, Inbox, KeyRound, Search, ShieldCheck, Trash2, Volume2, Users, Music, Monitor } from 'lucide-react';
-import qrcode from 'qrcode-generator';
 import { useStore, get, act, toast, openModal, closeModal, navigate, displayName, dmName, findChannel, sortedDms, orderedChannels, jumpTo, logout, updateSettings, wsSend, P, CH } from '../store';
 import { api } from '../api';
 import { t } from '../i18n';
@@ -20,12 +19,21 @@ export function AccountExtras() {
   const [code, setCode] = useState('');
   const [delPw, setDelPw] = useState('');
   const [showDelete, setShowDelete] = useState(false);
-  const qr = useMemo(() => {
-    if (!mfa) return '';
-    const q = qrcode(0, 'M');
-    q.addData(mfa.uri);
-    q.make();
-    return q.createDataURL(5, 8);
+  const [qr, setQr] = useState('');
+  useEffect(() => {
+    setQr('');
+    if (!mfa) return;
+    let live = true;
+    // The QR library is only needed here, so it loads on demand.
+    import('qrcode-generator').then(({ default: qrcode }) => {
+      const q = qrcode(0, 'M');
+      q.addData(mfa.uri);
+      q.make();
+      if (live) setQr(q.createDataURL(5, 8));
+    });
+    return () => {
+      live = false;
+    };
   }, [mfa]);
   return (
     <>
@@ -67,7 +75,7 @@ export function AccountExtras() {
         </>
       ) : mfa ? (
         <div className="mfa-setup">
-          <img src={qr} alt="QR" width={180} height={180} />
+          {qr ? <img src={qr} alt="QR" width={180} height={180} /> : <div style={{ width: 180, height: 180 }} />}
           <div className="grow">
             <p>{t('Scan this QR code with an authenticator app (Google Authenticator, Authy, Microsoft Authenticator…), then type the 6-digit code it shows.')}</p>
             <small className="muted">
