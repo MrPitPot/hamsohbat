@@ -49,4 +49,27 @@ run('git submodule update --init', ts);
     fs.writeFileSync(f, s);
   }
 }
+// Mihomo (Clash.Meta) core for the experimental Discord-through-proxy window. Pinned release, checked by SHA-256.
+const MIHOMO = {
+  version: 'v1.19.32',
+  sha256: '1ac84e795b5b915446e20139677fb6cc013a0778e876e8d4c96f994750b4c4a3',
+};
+const mihomoDir = path.join(deps, 'mihomo');
+if (!fs.existsSync(path.join(mihomoDir, 'mihomo.exe'))) {
+  const name = `mihomo-windows-amd64-${MIHOMO.version}.zip`;
+  console.log(`Downloading Mihomo ${MIHOMO.version}…`);
+  const res = await fetch(`https://github.com/MetaCubeX/mihomo/releases/download/${MIHOMO.version}/${name}`);
+  if (!res.ok) throw new Error('Mihomo download failed: ' + res.status);
+  const buf = Buffer.from(await res.arrayBuffer());
+  const got = (await import('node:crypto')).createHash('sha256').update(buf).digest('hex');
+  if (got !== MIHOMO.sha256) throw new Error(`Mihomo checksum mismatch (${got}); refusing to use it.`);
+  const zip = path.join(os.tmpdir(), name);
+  fs.writeFileSync(zip, buf);
+  fs.mkdirSync(mihomoDir, { recursive: true });
+  run(`powershell -NoProfile -Command "Expand-Archive -Force -Path '${zip}' -DestinationPath '${mihomoDir}'"`);
+  fs.rmSync(zip);
+  const exe = fs.readdirSync(mihomoDir).find((f) => /^mihomo.*\.exe$/i.test(f));
+  if (!exe) throw new Error('mihomo.exe not found in the archive');
+  if (exe !== 'mihomo.exe') fs.renameSync(path.join(mihomoDir, exe), path.join(mihomoDir, 'mihomo.exe'));
+}
 console.log('Desktop build dependencies are ready.');

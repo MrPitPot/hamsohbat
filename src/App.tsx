@@ -22,6 +22,7 @@ import { VoiceStage, IncomingCall } from './VoiceUI';
 import { ModalHost, memberMenu, STATUS_LABEL } from './Modals';
 import { UpdateBanner } from './AppSettings';
 import { TsSidebar, TsMain, TsRailItem } from './TeamSpeak';
+import { DcMain, DcRailItem } from './DiscordProxy';
 import { isDesktop, setServerUrl } from './desktop';
 import { TitleBar } from './TitleBar';
 
@@ -341,6 +342,7 @@ function ServerRail() {
         );
       })}
       <TsRailItem />
+      <DcRailItem />
       <RailItem title={t('Add a Server')} onClick={() => openModal('createServer')} className="add">
         <Plus size={24} />
       </RailItem>
@@ -1214,12 +1216,12 @@ function Shell() {
       <div className="nav-cols">
         <ServerRail />
         <div className="sidebar">
-          {route.serverId === '@ts' ? <TsSidebar /> : route.serverId ? <ServerSidebar serverId={route.serverId} /> : <HomeSidebar />}
+          {route.serverId === '@ts' ? <TsSidebar /> : route.serverId === '@dc' ? <HomeSidebar /> : route.serverId ? <ServerSidebar serverId={route.serverId} /> : <HomeSidebar />}
           <UserPanel />
         </div>
       </div>
       <div className="nav-scrim" onClick={() => set({ mobileNav: false })} />
-      {route.serverId === '@ts' ? <TsMain /> : route.channelId ? <ChannelView channelId={route.channelId} /> : route.serverId ? <NoChannel /> : <Friends />}
+      {route.serverId === '@ts' ? <TsMain /> : route.serverId === '@dc' ? <DcMain /> : route.channelId ? <ChannelView channelId={route.channelId} /> : route.serverId ? <NoChannel /> : <Friends />}
       <ModalHost />
       <ExtraModals />
       <IncomingCall />

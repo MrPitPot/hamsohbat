@@ -95,6 +95,15 @@ const cargoEnv = {
 };
 execSync('cargo build --release', { cwd: 'desktop/teamspeak', stdio: 'inherit', env: cargoEnv });
 fs.copyFileSync('desktop/teamspeak/target/release/hs-teamspeak.exe', 'desktop/build/hs-teamspeak.exe');
+// Optional proxy core for the experimental Discord window (fetched by scripts/setup-desktop.mjs).
+const proxyCore = 'desktop/.deps/mihomo/mihomo.exe';
+if (fs.existsSync(proxyCore)) {
+  fs.copyFileSync(proxyCore, 'desktop/build/hs-proxy.exe');
+  process.env.HS_PROXY = '1';
+} else {
+  process.env.HS_PROXY = '0';
+  console.log('Note: desktop/.deps/mihomo/mihomo.exe not found - building without the Discord proxy core.');
+}
 run('"' + path.resolve('desktop/build.cmd') + '"');
 
 // 2. publish the installer next to the web app so the desktop updater can find it
@@ -134,6 +143,7 @@ fs.rmSync(path.join(out, 'portable'), { recursive: true, force: true });
 fs.mkdirSync(path.join(out, 'portable'));
 copyRetry('desktop/build/Hamsohbat.exe', path.join(out, 'portable', 'Hamsohbat.exe'));
 copyRetry('desktop/build/hs-teamspeak.exe', path.join(out, 'portable', 'hs-teamspeak.exe'));
+if (fs.existsSync('desktop/build/hs-proxy.exe')) copyRetry('desktop/build/hs-proxy.exe', path.join(out, 'portable', 'hs-proxy.exe'));
 zip([path.join(out, 'portable', '*')], path.join(out, 'Hamsohbat-Portable.zip'));
 function zip(files, dest) {
   // New executables can be held for a few seconds while Windows asks the cloud about them; retry until readable.

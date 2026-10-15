@@ -41,6 +41,13 @@
         <File Id="HsTeamspeakExe" Source="build\hs-teamspeak.exe" KeyPath="no" />
         <RegistryValue Root="HKCU" Key="Software\Hamsohbat" Name="TeamSpeakBridge" Type="integer" Value="1" KeyPath="yes" />
       </Component>
+      <!-- Proxy core (Mihomo / Clash.Meta) for the experimental Discord window; only packed when setup-desktop fetched it. -->
+      <?if $(env.HS_PROXY) = "1" ?>
+      <Component Id="ProxyCore" Guid="5d0c0f0e-6a59-4e0b-9c27-3f1f6c1b7a90">
+        <File Id="HsProxyExe" Source="build\hs-proxy.exe" KeyPath="no" />
+        <RegistryValue Root="HKCU" Key="Software\Hamsohbat" Name="ProxyCore" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+      <?endif?>
       <!-- Starts with Windows, minimized to the tray, like Discord. Can be turned off in the app. -->
       <Component Id="Autostart" Guid="a7f2c9d4-3b1e-4f6a-8c2d-9e0b1a2c3d44">
         <RegistryValue Root="HKCU" Key="Software\Microsoft\Windows\CurrentVersion\Run" Name="Hamsohbat" Type="string"

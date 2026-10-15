@@ -40,6 +40,7 @@ if (wv) {
     const m = e.data || {};
     if (m.type === 'info') set((s: any) => ({ desktop: { ...s.desktop, ...m } }));
     else if (m.type === 'update') set({ update: m });
+    else if (m.type === 'proxy') (window as any).__proxyEvent?.(m);
     // Idle time of the whole computer and the game being played (see PresenceTick in app.cpp).
     else if (m.type === 'sysidle') (window as any).__sysIdle?.(Number(m.seconds) || 0);
     else if (m.type === 'game') (window as any).__game?.(m.name ? { name: m.name } : null);

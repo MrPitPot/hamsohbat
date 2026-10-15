@@ -425,6 +425,125 @@ static void SetPtt(const std::wstring& codeName, bool enabled) {
   }
 }
 
+// ------------------------------------------------------------------ Proxy + Discord window (experimental)
+// hs-proxy.exe is the open-source Mihomo (Clash.Meta) core, the same engine FlClash uses. The page writes its
+// config (subscription link, local ports) and controls it over its REST API on 127.0.0.1. Discord opens in its own
+// window whose WebView2 uses that local proxy only; the rest of Hamsohbat never goes through it.
+static HANDLE g_proxyProc = nullptr;
+static HWND g_dcWnd = nullptr;
+static ICoreWebView2Controller* g_dcCtrl = nullptr;
+
+static void ProxyStop() {
+  if (g_proxyProc) {
+    TerminateProcess(g_proxyProc, 0);
+    CloseHandle(g_proxyProc);
+    g_proxyProc = nullptr;
+  }
+}
+
+static void ProxyStart(const std::wstring& yaml) {
+  ProxyStop();
+  wchar_t exe[MAX_PATH];
+  GetModuleFileNameW(nullptr, exe, MAX_PATH);
+  std::wstring path = exe;
+  path = path.substr(0, path.find_last_of(L'\\') + 1) + L"hs-proxy.exe";
+  if (GetFileAttributesW(path.c_str()) == INVALID_FILE_ATTRIBUTES) {
+    PostJson(L"{\"type\":\"proxy\",\"state\":\"error\",\"message\":\"hs-proxy.exe is missing\"}");
+    return;
+  }
+  std::wstring dir = DataDir() + L"\\proxy";
+  CreateDirectoryW(DataDir().c_str(), nullptr);
+  CreateDirectoryW(dir.c_str(), nullptr);
+  int n = WideCharToMultiByte(CP_UTF8, 0, yaml.c_str(), (int)yaml.size(), nullptr, 0, nullptr, nullptr);
+  std::string utf8(n, 0);
+  WideCharToMultiByte(CP_UTF8, 0, yaml.c_str(), (int)yaml.size(), &utf8[0], n, nullptr, nullptr);
+  HANDLE f = CreateFileW((dir + L"\\config.yaml").c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (f == INVALID_HANDLE_VALUE) {
+    PostJson(L"{\"type\":\"proxy\",\"state\":\"error\",\"message\":\"cannot write config\"}");
+    return;
+  }
+  DWORD w;
+  WriteFile(f, utf8.data(), (DWORD)utf8.size(), &w, nullptr);
+  CloseHandle(f);
+  STARTUPINFOW si = {sizeof(si)};
+  PROCESS_INFORMATION pi;
+  std::wstring cmd = L"\"" + path + L"\" -d \"" + dir + L"\"";
+  if (CreateProcessW(path.c_str(), &cmd[0], nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, dir.c_str(), &si, &pi)) {
+    CloseHandle(pi.hThread);
+    g_proxyProc = pi.hProcess;
+    PostJson(L"{\"type\":\"proxy\",\"state\":\"started\"}");
+  } else
+    PostJson(L"{\"type\":\"proxy\",\"state\":\"error\",\"message\":\"cannot start hs-proxy.exe\"}");
+}
+
+static LRESULT CALLBACK DiscordProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
+  switch (msg) {
+    case WM_SIZE:
+      if (g_dcCtrl) {
+        RECT r;
+        GetClientRect(h, &r);
+        g_dcCtrl->put_Bounds(r);
+      }
+      return 0;
+    case WM_DESTROY:
+      if (g_dcCtrl) {
+        g_dcCtrl->Close();
+        g_dcCtrl->Release();
+        g_dcCtrl = nullptr;
+      }
+      g_dcWnd = nullptr;
+      return 0;
+  }
+  return DefWindowProcW(h, msg, wp, lp);
+}
+
+static void DiscordOpen(int port) {
+  if (g_dcWnd) {
+    ShowWindow(g_dcWnd, SW_SHOW);
+    SetForegroundWindow(g_dcWnd);
+    return;
+  }
+  static bool reg = false;
+  if (!reg) {
+    WNDCLASSW wc = {};
+    wc.lpfnWndProc = DiscordProc;
+    wc.hInstance = g_inst;
+    wc.hIcon = LoadIconW(g_inst, MAKEINTRESOURCEW(1));
+    wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+    wc.lpszClassName = L"HamsohbatDiscord";
+    RegisterClassW(&wc);
+    reg = true;
+  }
+  g_dcWnd = CreateWindowExW(0, L"HamsohbatDiscord", L"Discord (via proxy)", WS_OVERLAPPEDWINDOW | WS_VISIBLE, CW_USEDEFAULT, CW_USEDEFAULT, 1180, 760,
+                            nullptr, nullptr, g_inst, nullptr);
+  auto opts = Microsoft::WRL::Make<CoreWebView2EnvironmentOptions>();
+  std::wstring args = L"--proxy-server=http://127.0.0.1:" + std::to_wstring(port) + L" --autoplay-policy=no-user-gesture-required";
+  opts->put_AdditionalBrowserArguments(args.c_str());
+  std::wstring data = DataDir() + L"\\DiscordWebView2";
+  HWND win = g_dcWnd;
+  CreateCoreWebView2EnvironmentWithOptions(
+      nullptr, data.c_str(), opts.Get(),
+      Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>([win](HRESULT hr, ICoreWebView2Environment* env) -> HRESULT {
+        if (FAILED(hr) || !env || !IsWindow(win)) return S_OK;
+        env->CreateCoreWebView2Controller(win, Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>([win](HRESULT hr, ICoreWebView2Controller* c) -> HRESULT {
+                                                if (FAILED(hr) || !c || !IsWindow(win)) return S_OK;
+                                                g_dcCtrl = c;
+                                                g_dcCtrl->AddRef();
+                                                RECT r;
+                                                GetClientRect(win, &r);
+                                                c->put_Bounds(r);
+                                                ICoreWebView2* wv = nullptr;
+                                                c->get_CoreWebView2(&wv);
+                                                if (wv) {
+                                                  wv->Navigate(L"https://discord.com/app");
+                                                  wv->Release();
+                                                }
+                                                return S_OK;
+                                              }).Get());
+        return S_OK;
+      }).Get());
+}
+
 // ------------------------------------------------------------------ TeamSpeak bridge
 // hs-teamspeak.exe (next to this exe) speaks the TeamSpeak 3 protocol. We relay JSON lines:
 // page -> {type:"ts", payload:{cmd...}} -> bridge stdin; bridge stdout -> page {type:"ts", event:{...}}.
@@ -887,6 +1006,13 @@ static void HandleWebMessage(const std::wstring& json) {
   } else if (type == L"ts") {
     std::wstring payload = JsonGetObject(json, L"payload");
     if (!payload.empty()) TsSend(payload);
+  } else if (type == L"proxy") {
+    std::wstring cmd = JsonGet(json, L"cmd");
+    if (cmd == L"start") ProxyStart(JsonGet(json, L"yaml"));
+    else if (cmd == L"stop") ProxyStop();
+  } else if (type == L"discord") {
+    int port = _wtoi(JsonGet(json, L"port").c_str());
+    if (port > 0 && port < 65536) DiscordOpen(port);
   } else if (type == L"tray") {
     std::wstring st = JsonGet(json, L"state");
     int level = _wtoi(JsonGet(json, L"level").c_str());
@@ -1235,6 +1361,7 @@ static LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
       return TRUE;
     case WM_DESTROY:
       TsStop();
+      ProxyStop();
       for (auto& kv : g_trayIcons) DestroyIcon(kv.second);
       SavePlacement();
       Shell_NotifyIconW(NIM_DELETE, &g_nid);
