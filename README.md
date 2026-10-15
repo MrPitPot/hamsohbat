@@ -134,3 +134,7 @@ npm run release                  # نیاز به Visual Studio Build Tools، Rus
 
 ### وقتی تماس مستقیم وصل نمی‌شود
 اگر دو نفر پشت اینترنت‌های سخت‌گیر باشند، تماس نظیربه‌نظیر برقرار نمی‌شود. برنامه در این حالت خودکار بعد از چند ثانیه صدا، وبکم و اشتراک صفحه را از طریق خود سرور رد می‌کند (بدون نیاز به سرور TURN و کارت بانکی). مصرف سرور در این حالت بیشتر است. اگر کلید TURN دارید، `TURN_KEY_ID` و `TURN_KEY_API_TOKEN` را تنظیم کنید تا تماس نظیربه‌نظیر پایدارتر شود.
+
+## Discord through a VPN subscription (experimental, Windows app)
+A FlClash-style screen: paste your panel's subscription link, test and pick a server, then open Discord in its own window through it (Mihomo core, only that window is proxied). Logging in to Discord with a personal account in a third-party app is against Discord's terms - use at your own risk. Run `node scripts/setup-desktop.mjs` to fetch the pinned, checksum-verified core; tests: `node test/proxy.test.mjs` and `node test/proxy-exe.test.mjs`.
+

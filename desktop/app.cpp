@@ -471,6 +471,15 @@ static void ProxyStart(const std::wstring& yaml) {
   if (CreateProcessW(path.c_str(), &cmd[0], nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, dir.c_str(), &si, &pi)) {
     CloseHandle(pi.hThread);
     g_proxyProc = pi.hProcess;
+    // The core must never outlive the app (a crash would leave it holding its ports).
+    static HANDLE job = nullptr;
+    if (!job) {
+      job = CreateJobObjectW(nullptr, nullptr);
+      JOBOBJECT_EXTENDED_LIMIT_INFORMATION li = {};
+      li.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+      SetInformationJobObject(job, JobObjectExtendedLimitInformation, &li, sizeof(li));
+    }
+    if (job) AssignProcessToJobObject(job, pi.hProcess);
     PostJson(L"{\"type\":\"proxy\",\"state\":\"started\"}");
   } else
     PostJson(L"{\"type\":\"proxy\",\"state\":\"error\",\"message\":\"cannot start hs-proxy.exe\"}");

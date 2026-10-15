@@ -166,7 +166,8 @@ export function DcMain() {
     setNodes((l) => l.map((x) => (x.name === n ? { ...x, testing: true } : x)));
     let d: number | null = null;
     try {
-      const r = await api(`/proxies/${encodeURIComponent(n)}/delay?url=${encodeURIComponent(TEST_URL)}&timeout=6000`);
+      // Servers of a subscription live in its provider, not in the top-level proxy list.
+      const r = await api(`/providers/proxies/sub/${encodeURIComponent(n)}/healthcheck?url=${encodeURIComponent(TEST_URL)}&timeout=6000`);
       d = r.delay ?? null;
     } catch {}
     setNodes((l) => l.map((x) => (x.name === n ? { name: n, delay: d } : x)));

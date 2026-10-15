@@ -1,4 +1,4 @@
 {
-  "fa": "• تیم‌اسپیک: خطای «buffer underrun» میکروفون رفع شد (پردازش صدا در رشتهٔ جدا)\n• تیم‌اسپیک: کلیک چپ روی کانال همیشه جوین می‌کند\n• تیم‌اسپیک: پینگ دقیق‌تر و نزدیک به خود تیم‌اسپیک\n• امنیت: سیاست CSP اضافه شد",
-  "en": "• TeamSpeak: microphone buffer underrun error fixed (audio processing on its own thread)\n• TeamSpeak: left click on a channel always joins it\n• TeamSpeak: more accurate ping, matching the official client\n• Security: Content-Security-Policy added"
+    "fa":  "• دیسکورد (آزمایشی): افزودن لینک اشتراک وی‌پی‌ان، تست پینگ و انتخاب سریع‌ترین سرور و باز کردن دیسکورد در پنجرهٔ جدا از طریق آن\n• امنیت: CSP و محدودیت تلاش ورود\n• تیم‌اسپیک: رفع خطای میکروفون، کلیک چپ و پینگ دقیق‌تر",
+    "en":  "• Discord (experimental): add a VPN subscription, test pings, pick the fastest server and open Discord in its own window through it\n• Security: CSP and login throttling\n• TeamSpeak: mic error fix, left click, more accurate ping"
 }

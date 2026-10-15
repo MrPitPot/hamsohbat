@@ -23,3 +23,7 @@ ui 66 · voice 55 (includes relay audio/camera/screen) · desktop-ui 35 · teams
 - CSP via <meta> in index.html (tested: ui 66, voice 55 with CSP-violation listeners).
 - TeamSpeak: mic processing moved off the audio callback + underrun not shown as error; channel join on mouse-down; ping only from ping/pong (patched tsproto resend.rs, applied by scripts/setup-desktop.mjs).
 - Planned/experimental: Discord via user-supplied proxy (needs proxy type/config from the user; user account gateway = Discord ToS risk).
+
+## 1.7.0 (2026-10-15)
+- Discord-through-proxy screen (src/DiscordProxy.tsx, app.cpp ProxyStart/DiscordOpen, hs-proxy.exe = Mihomo v1.19.32, SHA-256 pinned in setup-desktop.mjs). Tests: proxy 18, proxy-exe 9 (real exe). Not verified: logging in to Discord through a real VPN, Discord voice (UDP) through it.
+

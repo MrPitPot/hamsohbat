@@ -40,12 +40,7 @@ run('git submodule update --init', ts);
       .replace('con.resender.update_srtt(now - rec.sent);', 'con.resender.update_srtt(now - rec.sent, false);')
       .replace('con.resender.update_srtt(now - ping.sent);', 'con.resender.update_srtt(now - ping.sent, true);')
       .replace('fn update_srtt(&mut self, rtt: Duration) {', 'fn update_srtt(&mut self, rtt: Duration, is_ping: bool) {')
-      .replace('		// Rtt (non-smoothed)
-', '		if !is_ping && self.stats.rtt != Duration::ZERO {
-			return;
-		}
-		// Rtt (non-smoothed)
-');
+      .replace('\t\t// Rtt (non-smoothed)\n', '\t\tif !is_ping && self.stats.rtt != Duration::ZERO {\n\t\t\treturn;\n\t\t}\n\t\t// Rtt (non-smoothed)\n');
     fs.writeFileSync(f, s);
   }
 }
