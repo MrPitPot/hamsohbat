@@ -691,7 +691,10 @@ const TYPE_MAP: Record<number, number> = { 0: CH.TEXT, 2: CH.VOICE, 4: CH.CATEGO
 
 async function fetchToFile(hub: Hub, uid: string, url: string, name: string, maxBytes: number): Promise<any | null> {
   try {
-    const r = await fetch(url);
+    // Only Discord's own CDN: the URL comes from an API response, never fetch arbitrary hosts (SSRF).
+    const u = new URL(url);
+    if (u.protocol !== 'https:' || !/(^|\.)(discordapp\.(com|net)|discord\.com|discordcdn\.com)$/i.test(u.hostname)) return null;
+    const r = await fetch(u.href, { redirect: 'error' });
     if (!r.ok) return null;
     const buf = new Uint8Array(await r.arrayBuffer());
     if (!buf.length || buf.length > maxBytes) return null;

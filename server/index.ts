@@ -114,12 +114,28 @@ async function fetchEmbed(url: URL) {
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), 6000);
   try {
-    const res = await fetch(url.href, {
-      redirect: 'follow',
-      signal: ctl.signal,
-      headers: { 'user-agent': 'Mozilla/5.0 (compatible; HamsohbatBot/1.0; +link-preview)', accept: 'text/html,image/*;q=0.8,*/*;q=0.5' },
-    });
-    if (!res.ok) return null;
+    let res: Response | null = null;
+    let target = url;
+    for (let hop = 0; hop < 4; hop++) {
+      res = await fetch(target.href, {
+        redirect: 'manual',
+        signal: ctl.signal,
+        headers: { 'user-agent': 'Mozilla/5.0 (compatible; HamsohbatBot/1.0; +link-preview)', accept: 'text/html,image/*;q=0.8,*/*;q=0.5' },
+      });
+      const loc = res.status >= 300 && res.status < 400 ? res.headers.get('location') : null;
+      if (!loc) break;
+      res.body?.cancel();
+      // A redirect must not lead to a private address (SSRF).
+      try {
+        target = new URL(loc, target);
+      } catch {
+        return null;
+      }
+      if (!/^https?:$/.test(target.protocol) || isPrivateHost(target.hostname)) return null;
+      res = null;
+    }
+    if (!res || !res.ok) return null;
+    url = target;
     const type = (res.headers.get('content-type') || '').toLowerCase();
     if (type.startsWith('image/')) {
       res.body?.cancel();
@@ -918,9 +934,23 @@ export class Hub extends DurableObject<Env> {
       return json({ error: 'Internal error' }, 500);
     }
   }
+  /** Sliding-window attempt counter (memory only; a restart resets it). Throws 429 when the limit is hit. */
+  private hits = new Map<string, number[]>();
+  throttle(key: string, max: number, windowMs: number, peek = false) {
+    const now = Date.now();
+    const list = (this.hits.get(key) || []).filter((t) => now - t < windowMs);
+    if (list.length >= max) {
+      this.hits.set(key, list);
+      fail('Too many attempts. Try again in a few minutes.', 429);
+    }
+    if (!peek) list.push(now);
+    this.hits.set(key, list);
+    if (this.hits.size > 5000) for (const [k, v] of this.hits) if (!v.length || now - v[v.length - 1] > windowMs) this.hits.delete(k);
+  }
   auth(token: string) {
     if (!token) return null;
-    return this.one('SELECT u.* FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token=?', token) || null;
+    // Sessions expire after 90 days.
+    return this.one('SELECT u.* FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token=? AND s.created_at>?', token, Date.now() - 90 * 86400000) || null;
   }
 
   openSocket(req: Request, url: URL): Response {
@@ -1107,7 +1137,8 @@ export class Hub extends DurableObject<Env> {
     this.on(
       'POST',
       '/api/auth/register',
-      async ({ body }) => {
+      async ({ body, req }) => {
+        this.throttle('reg:' + (req.headers.get('cf-connecting-ip') || 'x'), 10, 3600000);
         const username = str(body.username, 32).toLowerCase();
         const password = typeof body.password === 'string' ? body.password : '';
         if (this.env.REGISTRATION_CODE && body.code !== this.env.REGISTRATION_CODE) fail('Invalid registration code', 403);
@@ -1138,14 +1169,26 @@ export class Hub extends DurableObject<Env> {
     this.on(
       'POST',
       '/api/auth/login',
-      async ({ body }) => {
-        const u = this.one('SELECT * FROM users WHERE username=?', str(body.username, 32).toLowerCase());
+      async ({ body, req }) => {
+        const uname = str(body.username, 32).toLowerCase();
+        const ip = 'ip:' + (req.headers.get('cf-connecting-ip') || 'x');
+        const who = 'user:' + uname;
+        // Only failures count: 10 per address and 8 per account in 10 minutes.
+        this.throttle(ip, 10, 600000, true);
+        this.throttle(who, 8, 600000, true);
+        const bad = (msg: string, extra?: any) => {
+          this.throttle(ip, 10, 600000);
+          this.throttle(who, 8, 600000);
+          return extra ? json({ error: msg, ...extra }, 401) : fail(msg, 401);
+        };
+        const u = this.one('SELECT * FROM users WHERE username=?', uname);
         const hash = await hashPassword(String(body.password || ''), u?.pass_salt || 'x');
-        if (!u || u.deleted || hash !== u.pass_hash) return fail('Wrong username or password', 401);
+        if (!u || u.deleted || hash !== u.pass_hash) return bad('Wrong username or password');
         if (u.totp_secret) {
           if (!body.code) return json({ error: 'Two-factor code required', mfa: true }, 401);
-          if (!(await verifyTotp(u.totp_secret, String(body.code)))) return fail('Invalid two-factor code', 401);
+          if (!(await verifyTotp(u.totp_secret, String(body.code)))) return bad('Invalid two-factor code');
         }
+        this.hits.delete(who);
         const token = randHex(32);
         this.run('INSERT INTO sessions(token, user_id, created_at) VALUES(?,?,?)', token, u.id, Date.now());
         return { token };

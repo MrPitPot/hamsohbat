@@ -1,4 +1,4 @@
 {
-  "fa": "• تماس، وبکم و استریم حتی وقتی دو نفر مستقیم به هم وصل نمی‌شوند کار می‌کند (از طریق خود سرور)\n• حساسیت خودکار میکروفون و حذف نویز خیلی قوی\n• تیم‌اسپیک: ورود با یک کلیک و تنظیم کیفیت کانال\n• صدای افکت‌ها و ساندبورد واضح‌تر شد",
-  "en": "• Calls, webcam and screen share now work even when two people cannot connect directly (relayed through your server)\n• Automatic input sensitivity and extra-strong noise cancellation\n• TeamSpeak: one-click join and channel quality\n• Clearer interface sounds and soundboard"
+  "fa": "• بهبود امنیتی: محدودیت تلاش ورود، انقضای نشست‌ها (۹۰ روز) و جلوگیری از SSRF در پیش‌نمایش لینک و ایمپورت",
+  "en": "• Security: login attempt limits, session expiry (90 days), SSRF protection in link previews and import"
 }

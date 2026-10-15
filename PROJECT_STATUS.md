@@ -13,3 +13,8 @@ ui 66 · voice 55 (includes relay audio/camera/screen) · desktop-ui 35 · teams
 ## Known
 - Relay mode uses more server requests/bandwidth; fine for small groups.
 - Real-exe installer test is sensitive to an existing install on the machine.
+
+## 1.6.1 — security review (2026-10-15)
+- Repo/history scanned: no secrets, tokens or keys tracked (.dev.vars, server-url.txt, test users are ignored).
+- Added: login/register throttling (429), 90-day session expiry, redirect re-check for link previews (SSRF), Discord-CDN-only import fetch, `public/_headers` (nosniff, X-Frame-Options, Referrer-Policy, Permissions-Policy).
+- Known/open: no strict CSP yet (needs testing with WASM/AudioWorklet); uploaded files are readable by anyone with the unguessable URL; public OpenRelay TURN credentials are not secret.
