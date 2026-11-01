@@ -27,7 +27,9 @@ ui 66 · voice 55 (includes relay audio/camera/screen) · desktop-ui 35 · teams
 ## 2026-11-01: standalone direction
 - Removed everything that opened Discord from inside the app (Discord/VPN screen, Mihomo proxy core, WebView proxy code in desktop/app.cpp, installer/release/setup steps, proxy tests). The "Import from Discord" server-template import stays (it only reads a public template). desktop/app.cpp was edited without a Windows compiler: build it on Windows before releasing.
 - Streams are capped at 720p/30 FPS (shared/voice.ts STREAM_MAX): screen share 2 Mbps, camera 1.2 Mbps; settings offer 360p15 / 480p30 / 720p30.
-- Voice is still a P2P mesh (fine up to ~6 people). 100 people in one channel needs a media server (SFU), see the plan in the thread.
+- Voice for server channels can now go through a LiveKit media server (SFU): server/livekit.ts (token), `POST /api/voice/token`, src/sfu.ts + voice.ts (remote audio/camera/screen arrive as plain MediaStreams). Enabled when LIVEKIT_URL, LIVEKIT_API_KEY and LIVEKIT_API_SECRET are set; otherwise (and for DMs/group calls) voice stays peer-to-peer. Channel user limit can go up to 100.
+- Tested here with a real LiveKit 1.13.11 built from source and real headless browsers: 3 people 11/11, 8 people 11/11, 16 people all hear each other (media server at ~6% of one core). Not tested: 100 people (needs the VPS: `lk load-test`, see selfhost/files/README-fa.md section 5), server-side enforcement of moderator mute, real internet/NAT conditions.
+- Deployment files: selfhost/files/livekit.yaml, livekit.service, Caddyfile (voice subdomain), README-fa.md section 5.
 
 ## Experimental: Store (2026-11-01)
 - Store page (rail bag icon, `/store`): name colours, avatar frames, profile effects, upload boost (50 MB files) and Hamsohbat Plus (30 days: badge, 20% off, Plus-only items, 50 MB files). Gifts to friends.

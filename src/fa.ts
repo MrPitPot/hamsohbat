@@ -1085,4 +1085,6 @@ export const fa: Record<string, string> = {
   "Upload Boost (50 MB files)": "افزایش آپلود (فایل ۵۰ مگابایتی)",
   "View my profile": "دیدن پروفایل من",
   "{n} MB": "{n} مگابایت",
+  "Could not reach the voice server": "به سرور صدا وصل نشد",
+  "Disconnected from the voice server": "ارتباط با سرور صدا قطع شد",
 };

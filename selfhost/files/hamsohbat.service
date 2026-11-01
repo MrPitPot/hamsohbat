@@ -10,6 +10,10 @@ Environment=HOST=127.0.0.1
 Environment=DATA_DIR=/opt/hamsohbat/data
 # Environment=REGISTRATION_CODE=choose-a-secret-code
 # Environment=ICE_SERVERS=[{"urls":"stun:chat.example.ir:3478"},{"urls":"turn:chat.example.ir:3478","username":"hamsohbat","credential":"choose-a-password"}]
+# Media server (see livekit.yaml). With these three set, voice channels of servers go through it, so 100 people fit.
+# Environment=LIVEKIT_URL=wss://voice.example.ir
+# Environment=LIVEKIT_API_KEY=hamsohbat
+# Environment=LIVEKIT_API_SECRET=CHANGE_ME_LONG_RANDOM_SECRET
 Restart=always
 User=www-data
 

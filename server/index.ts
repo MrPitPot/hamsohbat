@@ -3,8 +3,9 @@ import { P, ALL_PERMS, DEFAULT_PERMS, CH, REL, MAX_MESSAGE_LENGTH, TIMEOUT_REMOV
 import { HttpError, fail, json, randHex, str, hashPassword, verifyTotp } from './util';
 import { registerFeatureRoutes, handleFeatureSocket } from './features';
 import { registerStoreRoutes, cosmeticsOf, uploadLimit } from './store';
+import { livekitEnabled, livekitToken, type LiveKitEnv } from './livekit';
 
-interface Env {
+interface Env extends LiveKitEnv {
   HUB: DurableObjectNamespace;
   ASSETS: Fetcher;
   REGISTRATION_CODE?: string;
@@ -1086,7 +1087,9 @@ export class Hub extends DurableObject<Env> {
         }
         ws.serializeAttachment(att);
         // The joiner gets the authoritative list first, then everybody learns about the joiner.
-        ws.send(JSON.stringify({ op: 'VOICE_READY', channelId: ch.id, bitrate: ch.bitrate || 64, states: this.voiceStates((a) => a.v!.c === ch.id) }));
+        // Server channels go through the media server (SFU) when one is configured; calls between 2 to 6 people stay peer-to-peer.
+        const sfu = !!ch.server_id && livekitEnabled(this.env);
+        ws.send(JSON.stringify({ op: 'VOICE_READY', channelId: ch.id, bitrate: ch.bitrate || 64, sfu, states: this.voiceStates((a) => a.v!.c === ch.id) }));
         this.send(this.audience(ch), { op: 'VOICE_STATE', state: this.voiceObj(att), serverId: ch.server_id }, att.sid);
       } else if (m.op === 'voice_leave') {
         this.dropVoice((a) => a.sid === att.sid, false);
@@ -1610,7 +1613,7 @@ export class Hub extends DurableObject<Env> {
           body.name !== undefined ? this.channelName(body.name, ch.type) : ch.name,
           body.topic !== undefined ? str(body.topic, 1024) : ch.topic,
           num(body.rateLimit, 0, 21600, ch.rate_limit || 0),
-          num(body.userLimit, 0, 99, ch.user_limit || 0),
+          num(body.userLimit, 0, 100, ch.user_limit || 0),
           num(body.bitrate, 8, 128, ch.bitrate || 64),
           body.nsfw !== undefined ? (body.nsfw ? 1 : 0) : ch.nsfw || 0,
           ch.id
@@ -2017,6 +2020,22 @@ export class Hub extends DurableObject<Env> {
       return { embed };
     });
 
+    // Token for the media server. Only someone who is really in that voice channel (on this connection) gets one.
+    this.on('POST', '/api/voice/token', async ({ me, body }) => {
+      if (!livekitEnabled(this.env)) fail('Not found', 404);
+      const { ch, perms } = this.access(me.id, String(body.channelId));
+      const sid = String(body.sid || '');
+      if (!ch.server_id || !this.voiceStates((a) => a.sid === sid && a.uid === me.id && a.v!.c === ch.id).length) fail('You do not have permission to do that', 403);
+      const token = await livekitToken(this.env, {
+        identity: sid,
+        name: me.display_name || me.username,
+        userId: me.id,
+        room: ch.id,
+        canSpeak: !!(perms & P.SPEAK),
+        canVideo: !!(perms & P.VIDEO),
+      });
+      return { url: this.env.LIVEKIT_URL, token };
+    });
     this.on('GET', '/api/ice', async () => {
       // Self-hosters can point at their own STUN/TURN (e.g. coturn) with a JSON list.
       if (this.env.ICE_SERVERS) {

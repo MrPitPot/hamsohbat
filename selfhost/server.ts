@@ -1,5 +1,5 @@
 // Self-hosted server: runs the exact same Hub as Cloudflare, on Node 22.5+ with a local SQLite file.
-// Usage: node server.mjs   (env: PORT, HOST, DATA_DIR, REGISTRATION_CODE, ICE_SERVERS, TURN_KEY_ID, TURN_KEY_API_TOKEN)
+// Usage: node server.mjs   (env: PORT, HOST, DATA_DIR, REGISTRATION_CODE, ICE_SERVERS, TURN_KEY_ID, TURN_KEY_API_TOKEN, LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET)
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -66,6 +66,9 @@ const ctx = {
 const env = {
   REGISTRATION_CODE: process.env.REGISTRATION_CODE || '',
   ICE_SERVERS: process.env.ICE_SERVERS || '',
+  LIVEKIT_URL: process.env.LIVEKIT_URL || '',
+  LIVEKIT_API_KEY: process.env.LIVEKIT_API_KEY || '',
+  LIVEKIT_API_SECRET: process.env.LIVEKIT_API_SECRET || '',
   TURN_KEY_ID: process.env.TURN_KEY_ID || '',
   TURN_KEY_API_TOKEN: process.env.TURN_KEY_API_TOKEN || '',
 };

@@ -2,6 +2,7 @@
 // the gateway only relays signalling. Glare is handled with the "perfect negotiation" pattern.
 import { get, set, wsSend, wsSendBinary, toast, canIn, findChannel } from './store';
 import { Relay } from './relay';
+import { Sfu, type SfuKind } from './sfu';
 import { api } from './api';
 import { P } from '../shared/perms';
 import { STREAM_MAX } from '../shared/voice';
@@ -11,7 +12,9 @@ import { processMic, browserSuppression, type ProcessedMic, type NoiseMode } fro
 interface Peer {
   sid: string;
   userId: string;
-  pc: RTCPeerConnection;
+  /** Null for people we hear through the media server (SFU). */
+  pc: RTCPeerConnection | null;
+  sfu?: { camera?: MediaStream; screen?: MediaStream };
   polite: boolean;
   makingOffer: boolean;
   ignoreOffer: boolean;
@@ -54,6 +57,7 @@ class Voice {
     const st = get().settings;
     return st.vadAuto ? Math.max(-70, Math.min(-25, this.floor + 10)) : st.vadThreshold;
   }
+  sfu: Sfu | null = null; // media server connection (server voice channels when one is configured)
   warnedRelay = false;
   relayed = new Set<string>(); // peers we get media from through the server
   relay = new Relay({
@@ -316,8 +320,9 @@ class Voice {
     if (ev.bitrate) this.bitrate = ev.bitrate;
     const mine = ev.states.find((x: any) => x.sid === get().sid);
     if (mine) this.applyServerState(mine);
-    const sid = get().sid;
-    for (const st of ev.states) if (st.sid !== sid && !this.peers.has(st.sid)) this.createPeer(st.sid, st.userId);
+    if (ev.sfu) {
+      this.startSfu(ev.channelId).then((ok) => ok || this.meshConnect(ev));
+    } else this.meshConnect(ev);
     sfx('join');
     // Calling someone who is not here yet: play a ringback tone until they pick up.
     const ch = findChannel(ev.channelId);
@@ -327,6 +332,84 @@ class Voice {
       this.ringTimer = setInterval(() => (++n > 12 || !this.channelId ? this.stopRingback() : sfx('outgoing')), 2500);
       setTimeout(() => this.ringTimer && sfx('outgoing'), 600);
     }
+  }
+
+  /** Calls everyone who is already here, one peer connection each (small rooms and direct calls). */
+  private meshConnect(ev: any) {
+    if (ev.channelId !== this.channelId) return;
+    const sid = get().sid;
+    for (const st of ev.states) if (st.sid !== sid && !this.peers.has(st.sid)) this.createPeer(st.sid, st.userId);
+  }
+
+  /** Connects to the media server. Returns false when that is not possible (we then fall back to peer-to-peer). */
+  private async startSfu(channelId: string): Promise<boolean> {
+    try {
+      const { url, token } = await api('POST', '/api/voice/token', { channelId, sid: get().sid });
+      if (this.channelId !== channelId) return true;
+      const sfu = (this.sfu = new Sfu({
+        onTrack: (sid, userId, kind, stream) => this.onSfuTrack(sid, userId, kind, stream),
+        onTrackGone: (sid, kind) => this.onSfuTrackGone(sid, kind),
+        onParticipantLeft: (sid) => this.closePeer(sid),
+        onState: (state) => {
+          if (this.sfu !== sfu) return;
+          this.patch({ connecting: state === 'reconnecting' });
+          if (state === 'disconnected' && this.channelId === channelId) {
+            toast('Disconnected from the voice server');
+            this.leave();
+          }
+        },
+      }));
+      await sfu.connect(url, token);
+      if (this.channelId !== channelId) return true;
+      const mic = this.userStream?.getAudioTracks()[0];
+      if (mic) await sfu.publish('mic', mic, { audioKbps: this.bitrate });
+      const cam = this.userStream?.getVideoTracks()[0];
+      if (cam) await sfu.publish('camera', cam);
+      return true;
+    } catch (e) {
+      console.warn('media server unavailable', e);
+      this.sfu?.close();
+      this.sfu = null;
+      toast('Could not reach the voice server');
+      return false;
+    }
+  }
+
+  private sfuPeer(sid: string, userId: string): Peer {
+    let p = this.peers.get(sid);
+    if (!p) {
+      p = { sid, userId, pc: null, sfu: {}, polite: false, makingOffer: false, ignoreOffer: false, streams: new Map(), audios: new Map(), audioSender: null, camSender: null, screenSenders: [] };
+      this.peers.set(sid, p);
+    }
+    return p;
+  }
+  private onSfuTrack(sid: string, userId: string, kind: SfuKind, stream: MediaStream) {
+    const p = this.sfuPeer(sid, userId || this.peers.get(sid)?.userId || '');
+    if (kind === 'mic') {
+      p.streams.set('sfu-audio', stream);
+      this.attachAudio(p, stream);
+    } else if (kind === 'screenAudio') {
+      // Sound of a shared screen: played, but not shown as someone speaking.
+      p.streams.set('sfu-screen-audio', stream);
+      if (!p.audios.has(stream.id)) {
+        const el = new Audio();
+        el.autoplay = true;
+        el.srcObject = stream;
+        el.muted = this.deafened();
+        el.volume = this.volumeFor(p.userId);
+        el.play().catch(() => {});
+        p.audios.set(stream.id, el);
+      }
+    } else {
+      p.sfu![kind] = stream;
+    }
+    this.bump();
+  }
+  private onSfuTrackGone(sid: string, kind: SfuKind) {
+    const p = this.peers.get(sid);
+    if (!p) return;
+    if (kind === 'camera' || kind === 'screen') delete p.sfu?.[kind];
+    this.bump();
   }
 
   stopRingback() {
@@ -426,8 +509,9 @@ class Voice {
 
   async onSignal(ev: any) {
     if (!this.channelId) return;
+    if (this.sfu) return; // everything goes through the media server
     const p = this.peers.get(ev.from) || this.createPeer(ev.from, ev.userId);
-    const { pc } = p;
+    const pc = p.pc!;
     const { description, candidate, relay } = ev.data || {};
     if (relay === 'request') {
       if (!this.relay.has(ev.from)) this.relay.startSend(ev.from);
@@ -496,8 +580,10 @@ class Voice {
         m.src.disconnect();
         this.meters.delete(k);
       }
-    p.pc.onnegotiationneeded = p.pc.ontrack = p.pc.onicecandidate = p.pc.oniceconnectionstatechange = p.pc.onconnectionstatechange = null;
-    p.pc.close();
+    if (p.pc) {
+      p.pc.onnegotiationneeded = p.pc.ontrack = p.pc.onicecandidate = p.pc.oniceconnectionstatechange = p.pc.onconnectionstatechange = null;
+      p.pc.close();
+    }
     this.bump();
   }
 
@@ -519,6 +605,8 @@ class Voice {
     this.userStream = this.screenStream = null;
     this.mic?.stop();
     this.mic = null;
+    this.sfu?.close();
+    this.sfu = null;
     this.relay.closeAll();
     this.relayed.clear();
     this.meterTrack?.stop();
@@ -580,7 +668,9 @@ class Voice {
       if (!this.userStream) return track.stop();
       track.onended = () => this.setVideo(false);
       this.userStream.addTrack(track);
+      this.sfu?.publish('camera', track).catch(() => toast('Camera is unavailable'));
       for (const p of this.peers.values()) {
+        if (!p.pc) continue;
         p.camSender = p.pc.addTrack(track, this.userStream);
         const snd = p.camSender;
         setTimeout(() => {
@@ -597,8 +687,9 @@ class Voice {
       cur.onended = null;
       cur.stop();
       this.userStream.removeTrack(cur);
+      this.sfu?.unpublish('camera');
       for (const p of this.peers.values()) {
-        if (p.camSender) p.pc.removeTrack(p.camSender);
+        if (p.camSender && p.pc) p.pc.removeTrack(p.camSender);
         p.camSender = null;
       }
     }
@@ -627,8 +718,17 @@ class Voice {
       try {
         (stream.getVideoTracks()[0] as any).contentHint = 'detail';
       } catch {}
+      const sfu = this.sfu;
+      if (sfu) {
+        const [v] = stream.getVideoTracks();
+        const [a] = stream.getAudioTracks();
+        sfu.publish('screen', v).catch(() => toast('Screen sharing is not supported on this device'));
+        if (a) sfu.publish('screenAudio', a).catch(() => {});
+      }
       for (const p of this.peers.values()) {
-        p.screenSenders = stream.getTracks().map((t) => p.pc.addTrack(t, stream));
+        if (!p.pc) continue;
+        const pc = p.pc;
+        p.screenSenders = stream.getTracks().map((t) => pc.addTrack(t, stream));
         setTimeout(() => this.tuneScreenSenders(p), 1500);
       }
     } else {
@@ -637,8 +737,11 @@ class Voice {
         t.stop();
       });
       this.screenStream = null;
+      this.sfu?.unpublish('screen');
+      this.sfu?.unpublish('screenAudio');
       for (const p of this.peers.values()) {
-        p.screenSenders.forEach((s) => p.pc.removeTrack(s));
+        const pc = p.pc;
+        if (pc) p.screenSenders.forEach((s) => pc.removeTrack(s));
         p.screenSenders = [];
       }
     }
@@ -661,7 +764,9 @@ class Voice {
       this.mic?.stop();
       this.mic = mic;
       this.userStream.addTrack(track);
+      await this.sfu?.replace('mic', track).catch(() => {});
       for (const p of this.peers.values()) {
+        if (!p.pc) continue;
         if (p.audioSender) await p.audioSender.replaceTrack(track);
         else p.audioSender = p.pc.addTrack(track, this.userStream);
       }
@@ -683,6 +788,7 @@ class Voice {
     const vs = s.voiceStates[userId];
     const p = vs && this.peers.get(vs.sid);
     if (!p) return { camera: null, screen: null };
+    if (p.sfu) return { camera: vs.video ? live(p.sfu.camera) : null, screen: live(p.sfu.screen) };
     let camera: MediaStream | null = null;
     if (vs.video) for (const [id, st] of p.streams) if (id !== vs.screen && live(st)) camera = st;
     return { camera, screen: vs.screen ? live(p.streams.get(vs.screen)) : null };
@@ -691,7 +797,8 @@ class Voice {
     const vs = get().voiceStates[userId];
     const p = vs && this.peers.get(vs.sid);
     if (p && this.relayed.has(p.sid) && p.streams.has('relay-audio')) return 'connected';
-    return p ? p.pc.iceConnectionState : 'new';
+    if (p?.sfu) return 'connected';
+    return p?.pc ? p.pc.iceConnectionState : 'new';
   }
 
   // ----- speaking indicators -----

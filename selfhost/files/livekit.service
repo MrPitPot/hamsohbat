@@ -1,0 +1,12 @@
+[Unit]
+Description=LiveKit media server for Hamsohbat voice
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/livekit-server --config /etc/livekit.yaml
+Restart=always
+LimitNOFILE=500000
+User=www-data
+
+[Install]
+WantedBy=multi-user.target

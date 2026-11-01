@@ -15,12 +15,14 @@
     "test:desktop": "node test/desktop.test.mjs",
     "test:features": "node test/features.test.mjs",
     "test:store": "node test/store.test.mjs",
+    "test:sfu": "node test/sfu.test.mjs",
     "test:ui": "node test/ui.test.mjs",
     "check:i18n": "node scripts/check-i18n.mjs"
   },
   "dependencies": {
     "@fontsource-variable/vazirmatn": "^5.3.0",
     "@sapphi-red/web-noise-suppressor": "^0.4.1",
+    "livekit-client": "^2.23.0",
     "lucide-react": "^1.56.0",
     "qrcode-generator": "^1.4.4",
     "react": "^18.3.1",

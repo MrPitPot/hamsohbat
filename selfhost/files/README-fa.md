@@ -59,6 +59,33 @@ realm=chat.example.ir
 sudo systemctl daemon-reload && sudo systemctl restart hamsohbat coturn
 ```
 
+## ۵. سرور مدیا برای ویس‌های شلوغ (تا ۱۰۰ نفر در یک کانال)
+
+بدون این بخش، ویس به‌صورت نفر‌به‌نفر (P2P) است و تا حدود ۶ نفر در یک کانال خوب کار می‌کند. با سرور مدیا
+[LiveKit](https://github.com/livekit/livekit) (رایگان و متن‌باز) هر نفر فقط **یک** اتصال به سرور دارد و کانال‌های ویسِ سرورها
+(نه تماس‌های دونفره) از آن رد می‌شوند.
+
+۱. فایل اجرایی رسمی `livekit-server` (لینوکس amd64) را از صفحه‌ی releases بگیرید و در `/usr/local/bin` بگذارید (`chmod +x`).
+۲. `livekit.yaml` را در `/etc/livekit.yaml` بگذارید، دامنه (`turn.domain`) و **راز تصادفی** (`keys`) را عوض کنید (`openssl rand -base64 32`).
+۳. `livekit.service` را در `/etc/systemd/system/` بگذارید و `sudo systemctl enable --now livekit` را اجرا کنید.
+۴. در `Caddyfile` بخش `voice.example.ir` را با زیردامنه‌ی خودتان درست کنید (رکورد A همین سرور).
+۵. در `hamsohbat.service` سه خط `LIVEKIT_URL`، `LIVEKIT_API_KEY` و `LIVEKIT_API_SECRET` را از حالت توضیح دربیاورید (همان کلید و رازِ `livekit.yaml`) و `sudo systemctl daemon-reload && sudo systemctl restart hamsohbat` را بزنید.
+۶. فایروال: **TCP** 7881 و 443؛ **UDP** از 50000 تا 60000، **UDP** 3478 و **UDP** از 30000 تا 40000 (محدوده‌ی رله‌ی TURN).
+
+برای ۱۰۰ نفر: پورت **۱ گیگابیت**، ۸ هسته و ۱۶ گیگ رم و ترافیک ماهانه‌ی نامحدود (یا خیلی زیاد) بگیرید. صدا با ۱۰۰ نفر حدود ۳۰ تا ۴۰ مگابیت
+و هر استریم ۷۲۰p که ۳۰ نفر ببینند حدود ۶۰ مگابیت خروجی می‌خورد (سقف هر استریم ۲ مگابیت است).
+
+آزمایش بار قبل از دعوت مردم (روی خود سرور یا یک سرور دیگر؛ ابزار `lk` را از LiveKit بگیرید):
+
+```bash
+lk load-test --url wss://voice.example.ir --api-key hamsohbat --api-secret راز-شما \
+   --room test --audio-publishers 20 --subscribers 100 --duration 3m
+```
+
+در همین مدت `htop` و `iftop` را نگاه کنید: اگر CPU زیر ۷۰٪ و خروجی زیر ظرفیت پورت ماند، آماده‌اید.
+
+محدودیت‌های فعلی: بی‌صدا/ناشنوا کردن توسط مدیر فقط در برنامه‌ی کاربر اعمال می‌شود (سرور مدیا آن را اجبار نمی‌کند)؛ و هر بیننده همه‌ی دوربین‌ها و اشتراک‌صفحه‌های کانال را می‌گیرد، پس تعداد استریم هم‌زمان را کم نگه دارید.
+
 ## تنظیمات
 
 | متغیر | کار |
@@ -67,6 +94,7 @@ sudo systemctl daemon-reload && sudo systemctl restart hamsohbat coturn
 | `DATA_DIR` | محل پایگاه‌داده و فایل‌ها (`hamsohbat.db`) — از همین فایل نسخه‌ی پشتیبان بگیرید |
 | `REGISTRATION_CODE` | اگر مقدار داشته باشد، ثبت‌نام فقط با این کد ممکن است |
 | `ICE_SERVERS` | فهرست JSON سرورهای STUN/TURN |
+| `LIVEKIT_URL` / `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` | سرور مدیا (بخش ۵). اگر هر سه تنظیم شوند ویس کانال‌های سرور از آن می‌گذرد |
 
 ## پشتیبان‌گیری
 
