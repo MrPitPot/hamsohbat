@@ -673,8 +673,9 @@ function Composer({ channelId, serverId, onEditLast }: any) {
     if (!canAttach) return toast('You do not have permission to do that');
     const next = [...files];
     for (const file of Array.from(list)) {
-      if (file.size > MAX_FILE_SIZE) {
-        toast(t('{name} is larger than 25 MB', { name: file.name }));
+      const limit = Math.max(MAX_FILE_SIZE, get().me.uploadLimit || 0);
+      if (file.size > limit) {
+        toast(t('{name} is larger than {n} MB', { name: file.name, n: num(Math.round(limit / 1048576)) }));
         continue;
       }
       if (next.length >= 10) break;

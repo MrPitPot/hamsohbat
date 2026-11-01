@@ -296,6 +296,11 @@ export function navigate(serverId: string | null, channelId?: string | null, rep
     set({ route: { serverId: '@dc', channelId: null }, mobileNav: false });
     return;
   }
+  if (serverId === '@shop') {
+    if (location.pathname !== '/store') history[replace ? 'replaceState' : 'pushState'](null, '', '/store');
+    set({ route: { serverId: '@shop', channelId: null }, mobileNav: false });
+    return;
+  }
   if (serverId && !s.servers[serverId]) serverId = null;
   if (serverId && channelId === undefined) channelId = defaultChannel(serverId);
   if (channelId && !findChannel(channelId)) channelId = serverId ? defaultChannel(serverId) : null;
@@ -321,6 +326,7 @@ export function syncRoute() {
   }
   if (parts[0] === 'teamspeak') return navigate('@ts', null, true);
   if (parts[0] === 'discord') return navigate('@dc', null, true);
+  if (parts[0] === 'store') return navigate('@shop', null, true);
   if (parts[0] === 'channels') {
     navigate(parts[1] === '@me' ? null : parts[1], parts[2] || (parts[1] === '@me' ? null : undefined), true);
     // Message links: /channels/<server>/<channel>/<message>

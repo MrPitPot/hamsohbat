@@ -8,7 +8,8 @@ import { isDesktop } from './desktop';
 import { WindowsSettings, UpdatesPanel } from './AppSettings';
 import { AppearanceSettings } from './AppearanceSettings';
 import { t } from './i18n';
-import { Avatar, ServerIcon, Modal, Field, Toggle, openMenu, fmtDate, fmtStamp, num, colorFor, MenuItem } from './ui';
+import { Avatar, ServerIcon, Modal, Field, Toggle, openMenu, fmtDate, fmtStamp, num, colorFor, MenuItem, NameColor } from './ui';
+import { ProfileEffect, PlusBadge } from './Store';
 import { MessageCard } from './Chat';
 import { PERM_LABELS } from '../shared/perms';
 import { NOISE_MODES } from './noise';
@@ -622,6 +623,7 @@ function Profile({ userId, serverId }: { userId: string; serverId?: string | nul
   const addable = roles.filter((r: any) => !member?.roles.includes(r.id) && r.position < myTop);
   return (
     <Modal width={360} className="profile">
+      <ProfileEffect effectId={user.cosmetics?.effect} />
       <div className="profile-banner" style={{ background: user.bannerColor || colorFor(userId) }} />
       <div className="profile-top">
         <div className="profile-avatar">
@@ -633,7 +635,8 @@ function Profile({ userId, serverId }: { userId: string; serverId?: string | nul
       </div>
       <div className="profile-card">
         <h2>
-          {displayName(userId, serverId)} {server?.ownerId === userId && <Crown size={16} className="crown" />}
+          <NameColor colorId={user.cosmetics?.color}>{displayName(userId, serverId)}</NameColor> {server?.ownerId === userId && <Crown size={16} className="crown" />}
+          {user.cosmetics?.plus && <PlusBadge />}
         </h2>
         <div className="profile-user" dir="ltr">
           {user.username}
