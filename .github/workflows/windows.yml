@@ -29,8 +29,9 @@ jobs:
           node-version: 22
           cache: npm
       - uses: dtolnay/rust-toolchain@stable
-      - name: Install WiX
-        run: dotnet tool install --global wix
+      # installer.wxs uses the WiX v4 schema; v7 needs an OSMF EULA acceptance, which is the owner's decision, so stay on v4.
+      - name: Install WiX 4
+        run: dotnet tool install --global wix --version 4.0.5
       - run: npm ci
       - run: node scripts/setup-desktop.mjs
       - name: Build (web app, desktop app, installer, bundles)
