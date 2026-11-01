@@ -1,0 +1,38 @@
+# Builds the Windows app (installer + portable zip) on a Windows runner, so it can be tested without a local toolchain.
+# Run it from the Actions tab ("Run workflow"), then download the artifact. The server address is only the default;
+# it can be changed inside the app (Settings) or with Hamsohbat.exe --server=https://...
+name: Windows build
+on:
+  workflow_dispatch:
+    inputs:
+      server:
+        description: Default server address the app connects to (https://...)
+        required: true
+        default: https://hamsohbat.example.workers.dev
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install WiX
+        run: dotnet tool install --global wix
+      - run: npm ci
+      - run: node scripts/setup-desktop.mjs
+      - name: Build (web app, desktop app, installer, bundles)
+        env:
+          HAMSOHBAT_SERVER: ${{ inputs.server }}
+        run: node scripts/release.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Hamsohbat-Windows
+          path: |
+            release/Hamsohbat-Setup.msi
+            release/Hamsohbat-Portable.zip
+            release/hamsohbat-server.zip
+          if-no-files-found: error
