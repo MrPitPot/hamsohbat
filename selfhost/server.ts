@@ -41,7 +41,7 @@ class Sock {
   deserializeAttachment() {
     return this.att;
   }
-  send(data: string) {
+  send(data: string | ArrayBuffer | Uint8Array) {
     if (this.raw.readyState === RawSocket.OPEN) this.raw.send(data);
   }
   close(code?: number, reason?: string) {
@@ -130,7 +130,11 @@ server.on('upgrade', (req, socket, head) => {
     if (!me) return raw.close(4001, 'unauthorized');
     const sock = new Sock(raw);
     raw.on('message', (data, binary) => {
-      if (binary) return;
+      // Binary frames carry relayed voice/video for people who cannot connect directly; the Hub wants an ArrayBuffer like on Cloudflare.
+      if (binary) {
+        const bufs = Array.isArray(data) ? data : [data instanceof ArrayBuffer ? Buffer.from(data) : data];
+        return hub.webSocketMessage(sock, new Uint8Array(Buffer.concat(bufs)).buffer);
+      }
       const text = data.toString();
       if (text === 'ping') return sock.send('pong');
       hub.webSocketMessage(sock, text);

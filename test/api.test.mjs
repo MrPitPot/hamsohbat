@@ -18,6 +18,7 @@ class Client {
   constructor(name) {
     this.name = name;
     this.events = [];
+    this.frames = [];
   }
   async api(method, path, body, raw) {
     const headers = {};
@@ -36,7 +37,9 @@ class Client {
   connect() {
     return new Promise((resolve, reject) => {
       this.ws = new WebSocket(BASE.replace('http', 'ws') + '/ws?token=' + this.token);
+      this.ws.binaryType = 'arraybuffer';
       this.ws.onmessage = (e) => {
+        if (e.data instanceof ArrayBuffer) return void this.frames.push(new Uint8Array(e.data));
         if (e.data === 'pong') return;
         const ev = JSON.parse(e.data);
         this.events.push(ev);
@@ -343,6 +346,24 @@ ok((await b.wait('VOICE_READY'))?.states.length === 2, 'second user sees first i
 b.send({ op: 'signal', to: a.sid, data: { sdp: 'offer' } });
 const sig = await a.wait('SIGNAL');
 ok(sig?.from === b.sid && sig.userId === b.id && sig.data.sdp === 'offer', 'signalling relayed');
+// Binary relay frame: [kind][sidLen][target sid][payload] → peer gets [kind][sidLen][sender sid][payload].
+const relayFrame = (from, to, payload) => {
+  const t = new TextEncoder().encode(to);
+  const f = new Uint8Array(2 + t.length + payload.length);
+  f[0] = 1;
+  f[1] = t.length;
+  f.set(t, 2);
+  f.set(payload, 2 + t.length);
+  from.ws.send(f);
+};
+relayFrame(b, a.sid, new Uint8Array([7, 8, 9, 10]));
+let got = null;
+for (let i = 0; i < 30 && !got; i++, await sleep(100)) got = a.frames[0];
+const gotSid = got && new TextDecoder().decode(got.subarray(2, 2 + got[1]));
+ok(got?.[0] === 1 && gotSid === b.sid && got.subarray(2 + got[1]).join() === '7,8,9,10', 'binary media relayed through the server');
+relayFrame(c, a.sid, new Uint8Array([1, 2, 3, 4]));
+await sleep(300);
+ok(a.frames.length === 1, 'binary relay refused from outside the call');
 c.send({ op: 'signal', to: a.sid, data: { sdp: 'evil' } });
 ok(!(await a.wait('SIGNAL', () => true, 300)), 'signalling refused from outside the call');
 b.send({ op: 'voice_state', mute: true, deaf: false, video: true, screen: 'stream-1' });
