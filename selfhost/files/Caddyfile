@@ -5,3 +5,9 @@ chat.example.ir {
 	encode zstd gzip
 	reverse_proxy 127.0.0.1:3000
 }
+
+# Only needed with the media server (voice channels with many people): its own subdomain, also with an A record
+# to this server. The app connects to wss://voice.example.ir.
+voice.example.ir {
+	reverse_proxy 127.0.0.1:7880
+}

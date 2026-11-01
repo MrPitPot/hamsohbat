@@ -208,7 +208,7 @@ export function ChannelSettings({ channelId, tab: initialTab }: { channelId: str
                   <small className="muted">{t('Higher bitrates sound better but use more data. Above 64kbps only helps on good connections.')}</small>
                 </Field>
                 <Field label={t('User Limit') + ' — ' + (f.userLimit ? num(f.userLimit) : '∞')}>
-                  <input type="range" className="wide-range" min={0} max={99} value={f.userLimit} onChange={(e) => setF({ ...f, userLimit: Number(e.target.value) })} />
+                  <input type="range" className="wide-range" min={0} max={100} value={f.userLimit} onChange={(e) => setF({ ...f, userLimit: Number(e.target.value) })} />
                   <small className="muted">{t('Limits the number of users that can connect to this voice channel. Users with Move Members can still join.')}</small>
                 </Field>
               </>

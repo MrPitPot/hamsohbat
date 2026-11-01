@@ -4,6 +4,7 @@ import '@fontsource-variable/vazirmatn';
 import './styles.css';
 import './themes.css';
 import './features.css';
+import './shop.css';
 import './desktop';
 import App from './App';
 

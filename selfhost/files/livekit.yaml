@@ -1,0 +1,19 @@
+# LiveKit media server (SFU) for voice channels with many people.
+# Install the official release binary (https://github.com/livekit/livekit/releases), copy this file to
+# /etc/livekit.yaml and put the SAME key and secret into hamsohbat.service (LIVEKIT_API_KEY / LIVEKIT_API_SECRET).
+# Make the secret long and random, e.g. `openssl rand -base64 32`.
+port: 7880            # signalling (WebSocket); Caddy puts HTTPS (wss://) in front of it
+bind_addresses: ["127.0.0.1"]
+rtc:
+  tcp_port: 7881      # media over TCP when UDP is blocked
+  port_range_start: 50000
+  port_range_end: 60000   # media over UDP; open this whole range in the firewall
+  use_external_ip: true   # uses the server's public address in the media negotiation
+turn:
+  enabled: true       # built-in TURN: people behind strict NATs still connect (no coturn needed for the media server)
+  udp_port: 3478
+  domain: voice.example.ir
+keys:
+  hamsohbat: CHANGE_ME_LONG_RANDOM_SECRET
+logging:
+  level: info

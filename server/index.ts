@@ -1,9 +1,11 @@
 import { DurableObject } from 'cloudflare:workers';
-import { P, ALL_PERMS, DEFAULT_PERMS, CH, REL, MAX_FILE_SIZE, MAX_MESSAGE_LENGTH, TIMEOUT_REMOVES, computeChannelPerms, VOICE_LIKE } from '../shared/perms';
+import { P, ALL_PERMS, DEFAULT_PERMS, CH, REL, MAX_MESSAGE_LENGTH, TIMEOUT_REMOVES, computeChannelPerms, VOICE_LIKE } from '../shared/perms';
 import { HttpError, fail, json, randHex, str, hashPassword, verifyTotp } from './util';
 import { registerFeatureRoutes, handleFeatureSocket } from './features';
+import { registerStoreRoutes, cosmeticsOf, uploadLimit } from './store';
+import { livekitEnabled, livekitToken, type LiveKitEnv } from './livekit';
 
-interface Env {
+interface Env extends LiveKitEnv {
   HUB: DurableObjectNamespace;
   ASSETS: Fetcher;
   REGISTRATION_CODE?: string;
@@ -67,6 +69,8 @@ CREATE TABLE IF NOT EXISTS event_users(event_id TEXT, user_id TEXT, PRIMARY KEY(
 CREATE TABLE IF NOT EXISTS audit_log(id TEXT PRIMARY KEY, server_id TEXT, user_id TEXT, action TEXT, target_id TEXT, changes TEXT, reason TEXT, created_at INTEGER);
 CREATE INDEX IF NOT EXISTS audit_server ON audit_log(server_id, id);
 CREATE TABLE IF NOT EXISTS notes(user_id TEXT, target_id TEXT, note TEXT, PRIMARY KEY(user_id, target_id));
+CREATE TABLE IF NOT EXISTS store_purchases(user_id TEXT, item_id TEXT, created_at INTEGER, gifted_by TEXT, PRIMARY KEY(user_id, item_id));
+CREATE TABLE IF NOT EXISTS coin_log(id TEXT PRIMARY KEY, user_id TEXT, amount INTEGER, reason TEXT, created_at INTEGER);
 CREATE TABLE IF NOT EXISTS webhooks(id TEXT PRIMARY KEY, server_id TEXT, channel_id TEXT, name TEXT, avatar TEXT, token TEXT, creator_id TEXT, created_at INTEGER);
 `;
 
@@ -206,6 +210,7 @@ export class Hub extends DurableObject<Env> {
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'));
     this.defineRoutes();
     registerFeatureRoutes(this);
+    registerStoreRoutes(this);
   }
 
   /** Adds columns introduced after the first release and upgrades old data. */
@@ -247,6 +252,11 @@ export class Hub extends DurableObject<Env> {
       ['totp_secret', 'TEXT'],
       ['totp_pending', 'TEXT'],
       ['deleted', 'INTEGER DEFAULT 0'],
+      // Store (experimental): everyone starts with the welcome coins.
+      ['coins', 'INTEGER DEFAULT 1000'],
+      ['equipped', "TEXT DEFAULT '{}'"],
+      ['daily_at', 'INTEGER DEFAULT 0'],
+      ['plus_until', 'INTEGER DEFAULT 0'],
     ]);
     const version = Number(this.one("SELECT value FROM meta WHERE key='version'")?.value || 0);
     if (version < 2) {
@@ -402,6 +412,7 @@ export class Hub extends DurableObject<Env> {
       pronouns: u.pronouns || '',
       createdAt: u.created_at,
       deleted: !!u.deleted,
+      cosmetics: cosmeticsOf(u),
     };
   }
   users(ids: string[]) {
@@ -999,7 +1010,7 @@ export class Hub extends DurableObject<Env> {
     return {
       op: 'READY',
       sid,
-      me: { ...this.pubUser(me), statusPref: me.status_pref, mfa: !!me.totp_secret },
+      me: { ...this.pubUser(me), statusPref: me.status_pref, mfa: !!me.totp_secret, uploadLimit: uploadLimit(this, me) },
       notes: Object.fromEntries(this.all('SELECT target_id, note FROM notes WHERE user_id=?', uid).map((n) => [n.target_id, n.note])),
       activities,
       users: this.users(relevant),
@@ -1076,7 +1087,9 @@ export class Hub extends DurableObject<Env> {
         }
         ws.serializeAttachment(att);
         // The joiner gets the authoritative list first, then everybody learns about the joiner.
-        ws.send(JSON.stringify({ op: 'VOICE_READY', channelId: ch.id, bitrate: ch.bitrate || 64, states: this.voiceStates((a) => a.v!.c === ch.id) }));
+        // Server channels go through the media server (SFU) when one is configured; calls between 2 to 6 people stay peer-to-peer.
+        const sfu = !!ch.server_id && livekitEnabled(this.env);
+        ws.send(JSON.stringify({ op: 'VOICE_READY', channelId: ch.id, bitrate: ch.bitrate || 64, sfu, states: this.voiceStates((a) => a.v!.c === ch.id) }));
         this.send(this.audience(ch), { op: 'VOICE_STATE', state: this.voiceObj(att), serverId: ch.server_id }, att.sid);
       } else if (m.op === 'voice_leave') {
         this.dropVoice((a) => a.sid === att.sid, false);
@@ -1600,7 +1613,7 @@ export class Hub extends DurableObject<Env> {
           body.name !== undefined ? this.channelName(body.name, ch.type) : ch.name,
           body.topic !== undefined ? str(body.topic, 1024) : ch.topic,
           num(body.rateLimit, 0, 21600, ch.rate_limit || 0),
-          num(body.userLimit, 0, 99, ch.user_limit || 0),
+          num(body.userLimit, 0, 100, ch.user_limit || 0),
           num(body.bitrate, 8, 128, ch.bitrate || 64),
           body.nsfw !== undefined ? (body.nsfw ? 1 : 0) : ch.nsfw || 0,
           ch.id
@@ -1934,10 +1947,11 @@ export class Hub extends DurableObject<Env> {
     // ----- files -----
     this.on('POST', '/api/files', async ({ me, q, req }) => {
       const declared = Number(req.headers.get('content-length') || 0);
-      if (declared > MAX_FILE_SIZE) fail('File is too large', 413);
+      const limit = uploadLimit(this, me);
+      if (declared > limit) fail('File is too large', 413);
       const buf = new Uint8Array(await req.arrayBuffer());
       if (!buf.length) fail('File is empty');
-      if (buf.length > MAX_FILE_SIZE) fail('File is too large', 413);
+      if (buf.length > limit) fail('File is too large', 413);
       const id = randHex(16);
       const name = (q.get('name') || 'file').replace(/[\\/\x00-\x1f"]/g, '_').slice(0, 200) || 'file';
       const type = (req.headers.get('content-type') || 'application/octet-stream').split(';')[0].trim().slice(0, 100);
@@ -2006,6 +2020,22 @@ export class Hub extends DurableObject<Env> {
       return { embed };
     });
 
+    // Token for the media server. Only someone who is really in that voice channel (on this connection) gets one.
+    this.on('POST', '/api/voice/token', async ({ me, body }) => {
+      if (!livekitEnabled(this.env)) fail('Not found', 404);
+      const { ch, perms } = this.access(me.id, String(body.channelId));
+      const sid = String(body.sid || '');
+      if (!ch.server_id || !this.voiceStates((a) => a.sid === sid && a.uid === me.id && a.v!.c === ch.id).length) fail('You do not have permission to do that', 403);
+      const token = await livekitToken(this.env, {
+        identity: sid,
+        name: me.display_name || me.username,
+        userId: me.id,
+        room: ch.id,
+        canSpeak: !!(perms & P.SPEAK),
+        canVideo: !!(perms & P.VIDEO),
+      });
+      return { url: this.env.LIVEKIT_URL, token };
+    });
     this.on('GET', '/api/ice', async () => {
       // Self-hosters can point at their own STUN/TURN (e.g. coturn) with a JSON list.
       if (this.env.ICE_SERVERS) {

@@ -3,16 +3,21 @@ import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { useStore, closeModal, displayName } from './store';
 import { t, lang } from './i18n';
+import { itemById } from '../shared/store';
 
 const COLORS = ['#5865f2', '#3ba55d', '#faa81a', '#ed4245', '#eb459e', '#00a8fc', '#9b59b6', '#e67e22'];
 export const colorFor = (id: string) => COLORS[[...String(id)].reduce((a, c) => a + c.charCodeAt(0), 0) % COLORS.length];
 
-export function Avatar({ userId, size = 32, status = false, speaking = false }: { userId: string; size?: number; status?: boolean; speaking?: boolean }) {
+export function Avatar({ userId, size = 32, status = false, speaking = false, frameId }: { userId: string; size?: number; status?: boolean; speaking?: boolean; frameId?: string | null }) {
   const user = useStore((s: any) => s.users[userId]);
   const presence = useStore((s: any) => (status ? s.presences[userId] || 'offline' : null));
   const name = user?.displayName || user?.username || '?';
+  // Avatar frame bought in the store (small avatars skip it so lists stay calm).
+  const frame = size >= 24 ? itemById(frameId !== undefined ? frameId : user?.cosmetics?.frame) : null;
+  const style: any = { width: size, height: size, fontSize: size * 0.42 };
+  if (frame) Object.assign(style, { '--frame': frame.value, '--fw': Math.max(2, Math.round(size * 0.07)) + 'px' });
   return (
-    <div className={'avatar' + (speaking ? ' speaking' : '')} style={{ width: size, height: size, fontSize: size * 0.42 }}>
+    <div className={'avatar' + (speaking ? ' speaking' : '') + (frame ? ' framed' : '')} style={style}>
       {user?.avatar ? <img src={user.avatar} alt="" draggable={false} /> : <div className="avatar-fallback" style={{ background: colorFor(userId) }}>{[...name][0]?.toUpperCase()}</div>}
       {status && <span className={'status-dot ' + presence} style={{ width: size * 0.34, height: size * 0.34 }} />}
     </div>
@@ -218,9 +223,21 @@ export function Toggle({ checked, onChange, disabled }: { checked: boolean; onCh
 }
 
 export function Name({ userId, serverId }: { userId: string; serverId?: string | null }) {
-  useStore((s: any) => s.users[userId]);
+  const user = useStore((s: any) => s.users[userId]);
   useStore((s: any) => (serverId ? s.servers[serverId]?.members[userId]?.nickname : null));
-  return <>{displayName(userId, serverId)}</>;
+  return <NameColor colorId={user?.cosmetics?.color}>{displayName(userId, serverId)}</NameColor>;
+}
+
+/** Shows a name in the colour (or gradient) bought in the store. */
+export function NameColor({ colorId, children }: { colorId?: string | null; children: React.ReactNode }) {
+  const c = itemById(colorId);
+  if (!c) return <>{children}</>;
+  const gradient = c.value.includes('gradient');
+  return (
+    <span className={'name-fx' + (gradient ? ' gradient' : '')} style={gradient ? ({ '--name-bg': c.value } as any) : { color: c.value }}>
+      {children}
+    </span>
+  );
 }
 
 export function fmtTime(ts: number) {
