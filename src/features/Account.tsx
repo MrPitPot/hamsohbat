@@ -8,6 +8,7 @@ import { api } from '../api';
 import { t } from '../i18n';
 import { Modal, Field, Toggle, Avatar, ServerIcon, fmtStamp, num } from '../ui';
 import { voice } from '../voice';
+import { STREAM_CHOICES } from '../../shared/voice';
 import { MessageCard } from '../Chat';
 import { ChannelIcon } from './Channels';
 
@@ -155,18 +156,13 @@ export function MicTest() {
   );
 }
 export function StreamQuality() {
-  const q = useStore((s: any) => s.settings.streamQuality || '720p30');
+  // Saved values above the 720p30 cap (older versions) show as 720p30.
+  const saved = useStore((s: any) => s.settings.streamQuality || '720p30');
+  const q = STREAM_CHOICES.some(([k]) => k === saved) ? saved : '720p30';
   return (
     <Field label={t('Screen Share Quality')}>
       <select value={q} onChange={(e) => updateSettings({ streamQuality: e.target.value })}>
-        {[
-          ['480p15', '480p • 15 FPS'],
-          ['720p30', '720p • 30 FPS'],
-          ['720p60', '720p • 60 FPS'],
-          ['1080p30', '1080p • 30 FPS'],
-          ['1080p60', '1080p • 60 FPS'],
-          ['1440p30', '1440p • 30 FPS'],
-        ].map(([k, l]) => (
+        {STREAM_CHOICES.map(([k, l]) => (
           <option key={k} value={k}>
             {l}
           </option>

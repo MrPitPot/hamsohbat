@@ -4,6 +4,7 @@ import { get, set, wsSend, wsSendBinary, toast, canIn, findChannel } from './sto
 import { Relay } from './relay';
 import { api } from './api';
 import { P } from '../shared/perms';
+import { STREAM_MAX } from '../shared/voice';
 import { audioCtx, playSound } from './sfx';
 import { processMic, browserSuppression, type ProcessedMic, type NoiseMode } from './noise';
 
@@ -164,22 +165,26 @@ class Voice {
       } catch {}
     }
   }
+  /** The chosen stream quality, never above the 720p30 cap (older saved settings may be higher). */
+  private streamQuality() {
+    const [res, fps] = String(get().settings.streamQuality || '720p30').split('p').map(Number);
+    const height = Math.min(res || STREAM_MAX.height, STREAM_MAX.height);
+    return { height, fps: Math.min(fps || STREAM_MAX.fps, STREAM_MAX.fps) };
+  }
   private screenConstraints(): MediaTrackConstraints {
-    const q = String(get().settings.streamQuality || '720p30');
-    const [res, fps] = q.split('p').map(Number);
-    const h = res || 720;
-    return { height: { ideal: h }, width: { ideal: Math.round((h * 16) / 9) }, frameRate: { ideal: fps || 30 } };
+    const { height, fps } = this.streamQuality();
+    return { height: { ideal: height, max: STREAM_MAX.height }, width: { ideal: Math.round((height * 16) / 9), max: 1280 }, frameRate: { ideal: fps, max: STREAM_MAX.fps } };
   }
   private tuneScreenSenders(p: Peer) {
-    const q = String(get().settings.streamQuality || '720p30');
-    const h = Number(q.split('p')[0]) || 720;
-    const max = h >= 1080 ? 6_000_000 : h >= 720 ? 2_500_000 : 1_000_000;
+    const { height, fps } = this.streamQuality();
+    const max = Math.round((STREAM_MAX.screenKbps * 1000 * height) / STREAM_MAX.height);
     for (const snd of p.screenSenders) {
       if (snd.track?.kind !== 'video') continue;
       try {
         const prm = snd.getParameters();
         if (!prm.encodings?.length) prm.encodings = [{}];
         prm.encodings[0].maxBitrate = max;
+        prm.encodings[0].maxFramerate = fps;
         snd.setParameters(prm).catch(() => {});
       } catch {}
     }
@@ -568,14 +573,26 @@ class Voice {
       if (!this.canVideo()) return;
       let track: MediaStreamTrack;
       try {
-        track = (await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1280 }, height: { ideal: 720 } } })).getVideoTracks()[0];
+        track = (await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1280, max: 1280 }, height: { ideal: 720, max: STREAM_MAX.height }, frameRate: { ideal: 30, max: STREAM_MAX.fps } } })).getVideoTracks()[0];
       } catch {
         return toast('Camera is unavailable');
       }
       if (!this.userStream) return track.stop();
       track.onended = () => this.setVideo(false);
       this.userStream.addTrack(track);
-      for (const p of this.peers.values()) p.camSender = p.pc.addTrack(track, this.userStream);
+      for (const p of this.peers.values()) {
+        p.camSender = p.pc.addTrack(track, this.userStream);
+        const snd = p.camSender;
+        setTimeout(() => {
+          try {
+            const prm = snd.getParameters();
+            if (!prm.encodings?.length) prm.encodings = [{}];
+            prm.encodings[0].maxBitrate = STREAM_MAX.cameraKbps * 1000;
+            prm.encodings[0].maxFramerate = STREAM_MAX.fps;
+            snd.setParameters(prm).catch(() => {});
+          } catch {}
+        }, 1000);
+      }
     } else {
       cur.onended = null;
       cur.stop();

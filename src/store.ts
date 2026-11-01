@@ -291,11 +291,6 @@ export function navigate(serverId: string | null, channelId?: string | null, rep
     set({ route: { serverId: '@ts', channelId: null }, mobileNav: false });
     return;
   }
-  if (serverId === '@dc') {
-    if (location.pathname !== '/discord') history[replace ? 'replaceState' : 'pushState'](null, '', '/discord');
-    set({ route: { serverId: '@dc', channelId: null }, mobileNav: false });
-    return;
-  }
   if (serverId === '@shop') {
     if (location.pathname !== '/store') history[replace ? 'replaceState' : 'pushState'](null, '', '/store');
     set({ route: { serverId: '@shop', channelId: null }, mobileNav: false });
@@ -325,7 +320,6 @@ export function syncRoute() {
     return navigate(null, null, true);
   }
   if (parts[0] === 'teamspeak') return navigate('@ts', null, true);
-  if (parts[0] === 'discord') return navigate('@dc', null, true);
   if (parts[0] === 'store') return navigate('@shop', null, true);
   if (parts[0] === 'channels') {
     navigate(parts[1] === '@me' ? null : parts[1], parts[2] || (parts[1] === '@me' ? null : undefined), true);

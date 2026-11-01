@@ -24,6 +24,11 @@ ui 66 · voice 55 (includes relay audio/camera/screen) · desktop-ui 35 · teams
 - TeamSpeak: mic processing moved off the audio callback + underrun not shown as error; channel join on mouse-down; ping only from ping/pong (patched tsproto resend.rs, applied by scripts/setup-desktop.mjs).
 - Planned/experimental: Discord via user-supplied proxy (needs proxy type/config from the user; user account gateway = Discord ToS risk).
 
+## 2026-11-01: standalone direction
+- Removed everything that opened Discord from inside the app (Discord/VPN screen, Mihomo proxy core, WebView proxy code in desktop/app.cpp, installer/release/setup steps, proxy tests). The "Import from Discord" server-template import stays (it only reads a public template). desktop/app.cpp was edited without a Windows compiler: build it on Windows before releasing.
+- Streams are capped at 720p/30 FPS (shared/voice.ts STREAM_MAX): screen share 2 Mbps, camera 1.2 Mbps; settings offer 360p15 / 480p30 / 720p30.
+- Voice is still a P2P mesh (fine up to ~6 people). 100 people in one channel needs a media server (SFU), see the plan in the thread.
+
 ## Experimental: Store (2026-11-01)
 - Store page (rail bag icon, `/store`): name colours, avatar frames, profile effects, upload boost (50 MB files) and Hamsohbat Plus (30 days: badge, 20% off, Plus-only items, 50 MB files). Gifts to friends.
 - Fake coins only: 1000 welcome coins, 100 daily, test coin packs that add coins without payment. A real gateway (e.g. Zarinpal) would replace `POST /api/store/packs/:id/buy` after verifying the payment.
