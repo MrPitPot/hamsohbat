@@ -9,7 +9,7 @@ import { WindowsSettings, UpdatesPanel } from './AppSettings';
 import { AppearanceSettings } from './AppearanceSettings';
 import { t } from './i18n';
 import { Avatar, ServerIcon, Modal, Field, Toggle, openMenu, fmtDate, fmtStamp, num, colorFor, MenuItem, NameColor } from './ui';
-import { ProfileEffect, PlusBadge } from './Store';
+import { ProfileEffect, PlusBadge } from './Shop';
 import { MessageCard } from './Chat';
 import { PERM_LABELS } from '../shared/perms';
 import { NOISE_MODES } from './noise';

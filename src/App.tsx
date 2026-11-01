@@ -22,7 +22,7 @@ import { VoiceStage, IncomingCall } from './VoiceUI';
 import { ModalHost, memberMenu, STATUS_LABEL } from './Modals';
 import { UpdateBanner } from './AppSettings';
 import { TsSidebar, TsMain, TsRailItem } from './TeamSpeak';
-import { StoreMain, StoreRailItem } from './Store';
+import { StoreMain, StoreRailItem } from './Shop';
 import { isDesktop, setServerUrl } from './desktop';
 import { TitleBar } from './TitleBar';
 
